@@ -10,18 +10,18 @@ eval_cfg_overwrite:
   model:
     num_sampling_steps: 5
 
-train_folder: /home/yagmurlu/code/MoDE_Diffusion_Policy/pretrained/
+train_folder: /home/i53/student/troth/code/bt/bt-trajectory-planning/models/MoDE_Diffusion_Policy/pretrained/MoDE_CALVIN_D
 checkpoint: d_ema=0
 device: 0
 
 
-log_dir: /home/yagmurlu/code/MoDE_Diffusion_Policy/outputs/d_ema
-dataset_path: /home/yagmurlu/code/mdt_policy/dataset/calvin_debug_dataset
+log_dir: /home/i53/student/troth/code/bt/bt-trajectory-planning/models/MoDE_Diffusion_Policy/outputs/d_ema
+dataset_path: /home/i53/student/troth/code/bt/bt-trajectory-planning/models/MoDE_Diffusion_Policy/dataset/calvin_debug_dataset
 num_videos: 30
 debug: False
 
 log_wandb: True
-wandb_entity: omeryagmurlu
+wandb_entity: thomas-roth-karlsruhe-institute-of-technology
 
 num_sampling_steps: null
 sampler_type: null
@@ -30,5 +30,5 @@ sigma_min: 1.0
 sigma_max: null
 noise_scheduler: null
 
-num_sequences: 1000
+num_sequences: 2 #1000
 ep_len: 360
