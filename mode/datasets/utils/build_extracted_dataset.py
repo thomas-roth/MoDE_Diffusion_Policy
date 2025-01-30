@@ -1,9 +1,11 @@
 import os
+import shutil
 import numpy as np
 from tqdm import tqdm
 
 
-dataset_path = "/home/i53/student/troth/code/bt/bt-trajectory-planning/models/MoDE_Diffusion_Policy/dataset/calvin_debug_dataset"
+dataset_path = "/home/thomas/bt/bt-trajectory-planning/models/MoDE_Diffusion_Policy/dataset/calvin_debug_dataset"
+dataset_path = "/media/thomas/SICHERUNGEN/hiwi/task_D_D"
 
 for split in ["training", "validation"]:
     print(f"\nProcessing split '{split}'")
@@ -14,15 +16,15 @@ for split in ["training", "validation"]:
     lang_annos_path = os.path.join(split_path, "lang_annotations")
     os.makedirs(output_path, exist_ok=True)
 
-    # Get episode numbers & move .npz files to extracted folder
+    # Get episode numbers & copy .npz files to extracted folder
     episode_numbers = []
-    for file in tqdm(os.listdir(split_path), total=len(os.listdir(split_path)), desc=f"Moving .npz files"):
+    for file in tqdm(os.listdir(split_path), total=len(os.listdir(split_path)), desc=f"Copying .npz files"):
         if file.endswith(".npz"):
             episode_number = file.split(".")[0].split("_")[1]
             episode_numbers.append(episode_number)
 
-            # move .npz files to extracted folder
-            os.rename(os.path.join(split_path, file), os.path.join(output_path, file))
+            # copy .npz files to extracted folder
+            shutil.copy(os.path.join(split_path, file), os.path.join(output_path, file))
     
     # Save episode numbers to ep_npz_names.list
     episode_numbers.sort()
