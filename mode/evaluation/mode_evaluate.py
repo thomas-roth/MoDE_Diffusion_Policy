@@ -285,6 +285,6 @@ if __name__ == "__main__":
     os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
     os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 
-    sys.path.append("/home/thomas/bt/bt-trajectory-planning/models/MoDE_Diffusion_Policy/calvin_env")
+    sys.path.append(str(Path(__file__).absolute().parents[2] / "calvin_env"))
     
     main()

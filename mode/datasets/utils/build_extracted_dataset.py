@@ -1,19 +1,18 @@
 import os
+from pathlib import Path
 import shutil
 import numpy as np
 from tqdm import tqdm
 
 
-dataset_path = "/media/thomas/SICHERUNGEN/hiwi/task_D_D"
-dataset_path = "/home/thomas/bt/bt-trajectory-planning/models/MoDE_Diffusion_Policy/dataset/calvin_debug_dataset"
+dataset_path = f"{str(Path(__file__).absolute().parents[3])}/dataset/calvin_debug_dataset"
 
 for split in ["training", "validation"]:
     print(f"\nProcessing split '{split}'")
 
     split_path = os.path.join(dataset_path, split)
-
-    output_path = os.path.join(split_path, "extracted")
     lang_annos_path = os.path.join(split_path, "lang_annotations")
+    output_path = os.path.join(split_path, "extracted")
     os.makedirs(output_path, exist_ok=True)
 
     # Get episode numbers & copy .npz files to extracted folder
@@ -47,3 +46,12 @@ for split in ["training", "validation"]:
         np.save(os.path.join(output_path, "ep_rel_actions.npy"), rel_actions_array)
     else:
         print("Warning: No rel actions found in any episode")
+
+    # Copy lang annotations
+    shutil.copy(os.path.join(lang_annos_path, "auto_lang_ann.npy"), os.path.join(split_path, "auto_lang_ann.npy"))
+
+    # Copy lang embeddings for validation split
+    if split == "validation":
+        embeddings_path = os.path.join(split_path, "lang_clip_resnet50")
+        os.makedirs(embeddings_path, exist_ok=True)
+        shutil.copy(os.path.join(lang_annos_path, "embeddings.npy"), os.path.join(embeddings_path, "embeddings.npy"))

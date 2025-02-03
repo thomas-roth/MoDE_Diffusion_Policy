@@ -1,7 +1,7 @@
 import logging
 from pathlib import Path
 import sys
-sys.tracebacklimit = None
+from typing import List
 import os 
 import wandb
 import hydra
@@ -11,6 +11,8 @@ from pytorch_lightning import Callback, LightningModule, seed_everything, Traine
 from pytorch_lightning.callbacks import LearningRateMonitor
 from pytorch_lightning.utilities import rank_zero_only
 
+
+sys.tracebacklimit = None
 
 # This is for using the locally installed repo clone when using slurm
 sys.path.insert(0, Path(__file__).absolute().parents[1].as_posix())
@@ -48,7 +50,7 @@ def log_rank_0(*args, **kwargs):
     logger.info(*args, **kwargs)
 
 
-def setup_callbacks(callbacks_cfg: DictConfig) -> list[Callback]:
+def setup_callbacks(callbacks_cfg: DictConfig) -> List[Callback]:
     return [hydra.utils.instantiate(cb) for cb in callbacks_cfg.values()]
 
 
