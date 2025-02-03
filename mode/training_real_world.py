@@ -26,6 +26,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+
 def clear_cuda_cache():
     """Clear CUDA cache and garbage collect unused memory."""
     if torch.cuda.is_available():
@@ -41,12 +42,15 @@ def clear_cuda_cache():
             reserved = memory_stats.get('reserved_bytes.all.current', 0) / (1024**3)
             logger.info(f"GPU {i} Memory: Allocated: {allocated:.2f}GB, Reserved: {reserved:.2f}GB")
 
+
 @rank_zero_only
 def log_rank_0(*args, **kwargs):
     logger.info(*args, **kwargs)
 
+
 def setup_callbacks(callbacks_cfg: DictConfig) -> list[Callback]:
     return [hydra.utils.instantiate(cb) for cb in callbacks_cfg.values()]
+
 
 def setup_logger(cfg: DictConfig, model: LightningModule):
     pathlib_cwd = Path.cwd()
@@ -55,6 +59,13 @@ def setup_logger(cfg: DictConfig, model: LightningModule):
         cfg.logger.name = f"{pathlib_cwd.parent.name}/{pathlib_cwd.name}"
         cfg.logger.id = cfg.logger.name.replace("/", "_")
     return hydra.utils.instantiate(cfg.logger)
+
+
+def cleanup_distributed():
+    """Cleanup distributed training resources"""
+    if torch.distributed.is_initialized():
+        torch.distributed.destroy_process_group()
+
 
 @hydra.main(config_path="../conf", config_name="config_real_world")
 def train(cfg: DictConfig) -> None:
@@ -149,20 +160,15 @@ def train(cfg: DictConfig) -> None:
         if wandb.run is not None:
             wandb.finish()
 
-def cleanup_distributed():
-    """Cleanup distributed training resources"""
-    if torch.distributed.is_initialized():
-        torch.distributed.destroy_process_group()
 
 if __name__ == "__main__":
     # Set environment variables
     os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
     os.environ["TOKENIZERS_PARALLELISM"] = 'True'
     os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'max_split_size_mb:512,expandable_segments:True'
-    # Add repo to path
-    sys.path.insert(0, str(Path(__file__).absolute().parents[1]))
-    # Add calvin_env to path
-    sys.path.append(str(Path(__file__).absolute().parents[1] / "calvin_env"))
+
+    sys.path.insert(0, str(Path(__file__).absolute().parents[1])) # Add repo to path
+    sys.path.insert(0, str(Path(__file__).absolute().parents[1] / "calvin_env")) # Add calvin_env to path
     
     try:
         train()

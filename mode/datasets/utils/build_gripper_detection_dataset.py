@@ -11,7 +11,7 @@ from models.MoDE_Diffusion_Policy.calvin_env.calvin_env.utils.utils import to_re
 NUM_SEQS = 242
 
 
-def getr_all_shapes():
+def get_all_shapes():
     print("Contents of calvin dataset:")
     calvin_path = "/home/thomas/bt/bt-trajectory-planning/models/MoDE_Diffusion_Policy/dataset/calvin_debug_dataset/training/episode_0358482.npz"
     with np.load(calvin_path) as data:
@@ -80,4 +80,4 @@ def main():
 
 if __name__ == "__main__":
     #main()
-    getr_all_shapes()
+    get_all_shapes()

@@ -4,8 +4,8 @@ import numpy as np
 from tqdm import tqdm
 
 
-dataset_path = "/home/thomas/bt/bt-trajectory-planning/models/MoDE_Diffusion_Policy/dataset/calvin_debug_dataset"
 dataset_path = "/media/thomas/SICHERUNGEN/hiwi/task_D_D"
+dataset_path = "/home/thomas/bt/bt-trajectory-planning/models/MoDE_Diffusion_Policy/dataset/calvin_debug_dataset"
 
 for split in ["training", "validation"]:
     print(f"\nProcessing split '{split}'")
@@ -43,7 +43,7 @@ for split in ["training", "validation"]:
                 print(f"Warning: Episode {episode_number} has no rel actions")
     
     if rel_actions:
-        rel_actions_array = np.concatenate(rel_actions, axis=0)
+        rel_actions_array = np.vstack(rel_actions)
         np.save(os.path.join(output_path, "ep_rel_actions.npy"), rel_actions_array)
     else:
         print("Warning: No rel actions found in any episode")
