@@ -27,13 +27,17 @@ class CalvinDataLoader(Dataset):
 
         self.key_state_start_indices = np.array([index[0] for index in self.annotations['info']['indx']])
         self.key_state_stop_indices = np.array([index[1] for index in self.annotations['info']['indx']])
-        self.current_goal_index = len(self.indices) - 1
+
+        if self.indices is not None:
+            self.current_goal_index = len(self.indices) - 1
 
         if "debug" in dataset_path:
-            self.current_goal_index = np.abs((np.array(self.indices) - self.key_state_start_indices[1])).argmin()
+            if self.indices is not None:
+                self.current_goal_index = np.abs((np.array(self.indices) - self.key_state_start_indices[1])).argmin()
             self.seq_len = 128
         
-        self.last_indices = self.indices
+        if self.indices is not None:
+            self.last_indices = self.indices
         
         self.nl_annotations = self.annotations['language']['ann']
         self.task_annotations = list(zip(self.annotations['info']['indx'], self.annotations['language']['task']))

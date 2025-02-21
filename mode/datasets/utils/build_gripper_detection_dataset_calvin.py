@@ -15,7 +15,9 @@ from models.MoDE_Diffusion_Policy.mode.datasets.utils.calvin_dataloader import C
 
 
 
+DATASET_PATH = "/DATA/calvin/task_D_D"
 OUTPUT_DIR = "/home/troth/bt/data/gripper_detection_calvin"
+
 
 logging.basicConfig(filename=f"{OUTPUT_DIR}/build_dataset.log", level=logging.INFO, format="%(asctime)s - %(message)s", filemode='w')
 
@@ -45,7 +47,7 @@ def simplify_trajectory(tcp_centers, gripper_widths, epsilon=1):
     return tcp_centers_simplified, gripper_widths_simplified
 
 
-def build_model_conditioning(tcp_centers, gripper_widths, img_size):
+def build_lang_conditioning(tcp_centers, gripper_widths, img_size):
     gripper_width_open = 1.0
     gripper_width_closed = -1.0
 
@@ -65,12 +67,6 @@ def build_model_conditioning(tcp_centers, gripper_widths, img_size):
             conditioning_contents.append("<action>Open Gripper</action>")
     
     return "<ans>[" + str.join(", ", conditioning_contents) + "]</ans>"
-
-
-
-def save_model_conditionings_to_disk(model_conds):
-    with open(f"{OUTPUT_DIR}/model_conditionings.json", "w") as file:
-        json.dump(model_conds, file)
 
 
 def draw_trajectory(tcp_centers, gripper_widths, img):
@@ -117,26 +113,23 @@ def save_imgs_to_disk(data, save_gifs):
             gif_frames[0].save(f"{OUTPUT_DIR}/gifs/{img_name}.gif", save_all=True, append_images=gif_frames[1:], duration=75, loop=0)
 
 
-def build_conds_and_imgs(save_imgs, save_gifs):
-    dataset_path = "/DATA/calvin/task_D_D"
-    subset = "training"
-
-    env_conf = OmegaConf.load(Path(dataset_path) / subset / ".hydra" / "merged_config.yaml")
+def build_conds_and_imgs(split, save_imgs, save_gifs):
+    env_conf = OmegaConf.load(f"{DATASET_PATH}/{split}/.hydra/merged_config.yaml")
     del env_conf.cameras["tactile"] # not relevant for this task & breaks hydra instantiation
     env = hydra.utils.instantiate(env_conf.env, use_vr=False, use_scene_info=True)
 
     calvin_root = Path(__file__).absolute().parents[3] / "calvin_env"
     seq_len = 1024
     step_size = 2
-    dataloader = CalvinDataLoader(calvin_root, dataset_path + "/" + subset, seq_len=seq_len, stepsize=step_size)
+    dataloader = CalvinDataLoader(calvin_root, f"{DATASET_PATH}/{split}", seq_len=seq_len, stepsize=step_size)
     
     simplified_traj_lengths = []
 
-    model_conds = []
+    lang_conds = []
     imgs_data = []
 
     num_of_seqs = len(dataloader.annotations["info"]["indx"])
-    for i in tqdm(range(num_of_seqs), total=num_of_seqs, desc="Building dataset"):
+    for i in tqdm(range(num_of_seqs), total=num_of_seqs, desc=f"Building dataset for {split} split"):
         obs_task, anno, _ = dataloader.get_single_problem(problem_index=i)
         gripper_widths = np.array(obs_task["robot_obs"])[:, -1]
 
@@ -156,12 +149,12 @@ def build_conds_and_imgs(save_imgs, save_gifs):
             simplified_traj_lengths.append(len(tcp_centers_simplified))
 
             assert env.cameras[cam_id].width == env.cameras[cam_id].height
-            model_cond = build_model_conditioning(tcp_centers_simplified, gripper_widths_simplified, env.cameras[cam_id].width)
-            model_conds.append(model_cond)
+            lang_cond = build_lang_conditioning(tcp_centers_simplified, gripper_widths_simplified, env.cameras[cam_id].width)
+            lang_conds.append(lang_cond)
 
             datapoint = ([], anno, cam_id)
             for img in [obs_task["rgb_static"], obs_task["rgb_gripper"]][cam_id]:
-                # FIXME: trajs for gripper cam not visible (bc cam moves => new projection per frame?)
+                # FIXME: trajs for gripper cam not visible bc cam moves => new projection per frame?
 
                 img_with_traj = draw_trajectory(tcp_centers_simplified, gripper_widths_simplified, img)
                 datapoint[0].append(img_with_traj)
@@ -175,22 +168,27 @@ def build_conds_and_imgs(save_imgs, save_gifs):
     logging.info(f"Average trajectory length: {np.mean(simplified_traj_lengths)}")
 
     if save_imgs:
-        save_imgs_to_disk(data, save_gifs)
+        save_imgs_to_disk(imgs_data, save_gifs)
 
-    return model_conds, imgs_data
+    return lang_conds, imgs_data
+
+
+def build_auto_lang_ann_with_lang_conditionings(split, lang_conds):
+    lang_cond_explanation = "Use the following list of tuples enclosed by <ans> and </ans> tags as a guide for the trajectory of the end effector. " \
+                            "The tuple denotes the relative x and y location of the end effector in the image. The action tags indicate the gripper action"
+
+    auto_lang_ann = np.load(f"{DATASET_PATH}/{split}/lang_annotations/auto_lang_ann.npy", allow_pickle=True)
+    for i, (task, lang_cond) in enumerate(zip(auto_lang_ann[np.newaxis][0]["language"]["ann"], lang_conds)):
+        auto_lang_ann[np.newaxis][0]["language"]["ann"][i] = f"{task}. {lang_cond_explanation}: {lang_cond}"
+
+    np.save(f"{OUTPUT_DIR}/auto_lang_ann_{split}.npy", auto_lang_ann)
 
 
 def build_dataset(save_imgs=False, save_gifs=False):
-    model_conds, imgs_data = build_conds_and_imgs(save_imgs)
-    #save_model_conditionings_to_disk(model_conds)
-    
-    dataset = dict()
-    dataset["lang_text"] = model_conds
-    dataset["rgb_obs"]["rgb_static"] = np.array(imgs_data)[:, 0, ::2]
-    dataset["rgb_obs"]["rgb_gripper"] = np.array(imgs_data)[:, 0, 1::2]
-
-    np.savez(f"{OUTPUT_DIR}/dataset.npz", **dataset)
+    for split in ["training", "validation"]:
+        lang_conds, _ = build_conds_and_imgs(split, save_imgs, save_gifs)
+        build_auto_lang_ann_with_lang_conditionings(split, lang_conds)
 
 
 if __name__ == '__main__':
-    build_dataset(save_imgs=True, save_gifs=False)
+    build_dataset(save_imgs=False, save_gifs=False)
