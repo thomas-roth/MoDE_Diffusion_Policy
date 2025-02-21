@@ -45,6 +45,34 @@ def simplify_trajectory(tcp_centers, gripper_widths, epsilon=1):
     return tcp_centers_simplified, gripper_widths_simplified
 
 
+def build_model_conditioning(tcp_centers, gripper_widths, img_size):
+    gripper_width_open = 1.0
+    gripper_width_closed = -1.0
+
+    is_gripper_open = gripper_widths[0] == gripper_width_open
+
+    conditioning_contents = []
+
+    for (tcp_center, gripper_width) in zip(tcp_centers, gripper_widths):
+        # normalize coordinates to [0, 1] to enable different image sizes
+        tcp_center_normalized = (float(tcp_center[0]) / img_size, float(tcp_center[1]) / img_size)
+
+        conditioning_contents.append(f"({tcp_center_normalized[0]}, {tcp_center_normalized[1]})")
+
+        if is_gripper_open and gripper_width == gripper_width_closed:
+            conditioning_contents.append("<action>Close Gripper</action>")
+        elif not is_gripper_open and gripper_width == gripper_width_open:
+            conditioning_contents.append("<action>Open Gripper</action>")
+    
+    return "<ans>[" + str.join(", ", conditioning_contents) + "]</ans>"
+
+
+
+def save_model_conditionings_to_disk(model_conds):
+    with open(f"{OUTPUT_DIR}/model_conditionings.json", "w") as file:
+        json.dump(model_conds, file)
+
+
 def draw_trajectory(tcp_centers, gripper_widths, img):
     img_copy = img.copy()
 
@@ -89,7 +117,7 @@ def save_imgs_to_disk(data, save_gifs):
             gif_frames[0].save(f"{OUTPUT_DIR}/gifs/{img_name}.gif", save_all=True, append_images=gif_frames[1:], duration=75, loop=0)
 
 
-def build_data(save_imgs=False, save_gifs=False):
+def build_conds_and_imgs(save_imgs, save_gifs):
     dataset_path = "/DATA/calvin/task_D_D"
     subset = "training"
 
@@ -101,15 +129,14 @@ def build_data(save_imgs=False, save_gifs=False):
     seq_len = 1024
     step_size = 2
     dataloader = CalvinDataLoader(calvin_root, dataset_path + "/" + subset, seq_len=seq_len, stepsize=step_size)
-
-    data = []
+    
     simplified_traj_lengths = []
+
+    model_conds = []
+    imgs_data = []
 
     num_of_seqs = len(dataloader.annotations["info"]["indx"])
     for i in tqdm(range(num_of_seqs), total=num_of_seqs, desc="Building dataset"):
-        if i == 20:
-            break
-
         obs_task, anno, _ = dataloader.get_single_problem(problem_index=i)
         gripper_widths = np.array(obs_task["robot_obs"])[:, -1]
 
@@ -128,6 +155,10 @@ def build_data(save_imgs=False, save_gifs=False):
             tcp_centers_simplified, gripper_widths_simplified = simplify_trajectory(tcp_centers, gripper_widths)
             simplified_traj_lengths.append(len(tcp_centers_simplified))
 
+            assert env.cameras[cam_id].width == env.cameras[cam_id].height
+            model_cond = build_model_conditioning(tcp_centers_simplified, gripper_widths_simplified, env.cameras[cam_id].width)
+            model_conds.append(model_cond)
+
             datapoint = ([], anno, cam_id)
             for img in [obs_task["rgb_static"], obs_task["rgb_gripper"]][cam_id]:
                 # FIXME: trajs for gripper cam not visible (bc cam moves => new projection per frame?)
@@ -139,15 +170,27 @@ def build_data(save_imgs=False, save_gifs=False):
                     # only first frame of each sequence needed
                     break
             
-            data.append(datapoint)
+            imgs_data.append(datapoint)
+
+    logging.info(f"Average trajectory length: {np.mean(simplified_traj_lengths)}")
 
     if save_imgs:
         save_imgs_to_disk(data, save_gifs)
 
-    logging.info(f"Average trajectory length: {np.mean(simplified_traj_lengths)}")
+    return model_conds, imgs_data
 
-    return data
+
+def build_dataset(save_imgs=False, save_gifs=False):
+    model_conds, imgs_data = build_conds_and_imgs(save_imgs)
+    #save_model_conditionings_to_disk(model_conds)
+    
+    dataset = dict()
+    dataset["lang_text"] = model_conds
+    dataset["rgb_obs"]["rgb_static"] = np.array(imgs_data)[:, 0, ::2]
+    dataset["rgb_obs"]["rgb_gripper"] = np.array(imgs_data)[:, 0, 1::2]
+
+    np.savez(f"{OUTPUT_DIR}/dataset.npz", **dataset)
 
 
 if __name__ == '__main__':
-    build_data(save_imgs=True, save_gifs=True)
+    build_dataset(save_imgs=True, save_gifs=False)
