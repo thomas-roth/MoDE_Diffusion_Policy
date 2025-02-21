@@ -42,6 +42,8 @@ class FiLMResNet50Policy(nn.Module):
         x = self.resnet.act1(x)
         x = self.resnet.maxpool(x)
 
+        condition = condition.to(x.dtype)
+        
         x = self.resnet.layer1(x)
         x = self.film1(x, condition)
 

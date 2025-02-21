@@ -756,6 +756,8 @@ class MoDeDiT(nn.Module):
         # embed them into linear representations for the transformer
         if len(goals.shape) == 2:
             goals = einops.rearrange(goals, 'b d -> b 1 d')
+
+        goals = goals.bfloat16()
         
         state_embed = self.tok_emb(states['state_images'])
         if 'robot_obs' in states and self.use_proprio:
