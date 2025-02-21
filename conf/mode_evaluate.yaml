@@ -10,14 +10,13 @@ eval_cfg_overwrite:
   model:
     num_sampling_steps: 5
 
-train_folder: /home/thomas/bt/bt-trajectory-planning/models/MoDE_Diffusion_Policy/pretrained/MoDE_CALVIN_D
+train_folder: /home/troth/bt/bt-trajectory-planning/models/MoDE_Diffusion_Policy/pretrained/MoDE_CALVIN_D
 checkpoint: d_ema=0
 device: 0
 
 
-log_dir: /home/thomas/bt/bt-trajectory-planning/models/MoDE_Diffusion_Policy/outputs/d_ema
-dataset_path: /home/thomas/bt/bt-trajectory-planning/models/MoDE_Diffusion_Policy/dataset/calvin_debug_dataset
-#dataset_path: /media/thomas/SICHERUNGEN/hiwi/task_D_D
+log_dir: /home/troth/bt/bt-trajectory-planning/models/MoDE_Diffusion_Policy/outputs/d_ema
+dataset_path: /DATA/calvin/task_D_D/validation
 num_videos: 30
 debug: True
 
