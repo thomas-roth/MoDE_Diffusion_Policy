@@ -112,12 +112,18 @@ class DiskDataset(BaseDataset):
 
         episode_lookup = []
 
+        split = "validation" if self.validation else "training"
+        lang_file_path = Path(self.lang_folder) / split / "auto_lang_ann.npy"
+        if not lang_file_path.is_absolute():
+            lang_file_path = abs_datasets_dir / lang_file_path
+
         try:
-            print("trying to load lang data from: ", abs_datasets_dir / self.lang_folder / "auto_lang_ann.npy")
-            lang_data = np.load(abs_datasets_dir / self.lang_folder / "auto_lang_ann.npy", allow_pickle=True).item()
+            print("trying to load lang data from: ", lang_file_path)
+            lang_data = np.load(lang_file_path, allow_pickle=True).item()
         except Exception:
-            print("Exception, trying to load lang data from: ", abs_datasets_dir / "auto_lang_ann.npy")
-            lang_data = np.load(abs_datasets_dir / "auto_lang_ann.npy", allow_pickle=True).item()
+            default_file_path = abs_datasets_dir / "lang_annotations" / "auto_lang_ann.npy"
+            print(f"{lang_file_path} does not exist, trying to load lang data from: {default_file_path}")
+            lang_data = np.load(default_file_path, allow_pickle=True).item()
 
         ep_start_end_ids = lang_data["info"]["indx"]  # each of them are 64
         lang_ann = lang_data["language"]["emb"]  # length total number of annotations
