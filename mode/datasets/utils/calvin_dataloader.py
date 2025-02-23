@@ -1,19 +1,20 @@
 import os
 import numpy as np
 from torch.utils.data import Dataset
-import tqdm
 
 
+# TODO: remove unused parts after generic & specific dataset builders finished
 class CalvinDataLoader(Dataset):
-    def __init__(self, calvin_root, dataset_path, seq_len, stepsize=2, annotations_file="lang_annotations/auto_lang_ann.npy"):
+    def __init__(self, calvin_root, dataset_path, seq_len=128, step_size=2, annotations_file="lang_annotations/auto_lang_ann.npy"):
         self.calvin_root = calvin_root
         self.seq_len = seq_len
         self.dataset_path = os.path.join(self.calvin_root, dataset_path)
-        self.stepsize = stepsize
+        self.step_size = step_size
 
         self.key_state_indices = None
         self.key_state_indices_global = None
 
+        self.iterate_over_single_seqs = True
         self.continuous_reverse_stream = True
 
         self.annotations = np.load(os.path.join(self.dataset_path, annotations_file), allow_pickle=True).item()
@@ -21,7 +22,7 @@ class CalvinDataLoader(Dataset):
         try:
             self.indices = next(iter(np.load(f"{dataset_path}/scene_info.npy", allow_pickle=True).item().values()))
             self.indices = list(range(53819, self.indices[-1] + 1))
-            self.indices = self.indices[::self.stepsize]
+            self.indices = self.indices[::self.step_size]
         except:
             self.indices = None
 
@@ -45,18 +46,20 @@ class CalvinDataLoader(Dataset):
         self.task_nlp_map = dict()
         self.build_task_nlp_map()
 
-        self.ds_indices = np.array([np.arange(start_index, start_index + (self.seq_len * self.stepsize)) for start_index in self.key_state_start_indices])
+        self.ds_indices = np.array([np.arange(start_index, start_index + (self.seq_len * self.step_size)) for start_index in self.key_state_start_indices])
 
 
     def __len__(self):
-        return len(self.indices)
+        return len(self.task_annotations)
     
 
     def __getitem__(self, index):
-        if self.continuous_reverse_stream:
-            data = self.load_next_batch()
+        if self.iterate_over_single_seqs:
+            data = self.get_single_seq(index)
+        elif self.continuous_reverse_stream:
+            data = self.load_next_seqs_batch()
         else:
-            data = self.load_batch(index)
+            data = self.load_seqs_batch(index)
 
         return {**data} # shallow copy
 
@@ -105,7 +108,7 @@ class CalvinDataLoader(Dataset):
         return self.current_goal_index <= self.indices[0]
     
 
-    def load_next_batch(self):
+    def load_next_seqs_batch(self):
         ds_path = self.dataset_path
         subset = "train"
         frames_static = []
@@ -131,7 +134,7 @@ class CalvinDataLoader(Dataset):
                     if index_low <= index <= index_high:
                         annotation = ann
                         if ann != previous_task:
-                            key_state_indices.append((index_high - index_low) // self.stepsize + i)
+                            key_state_indices.append((index_high - index_low) // self.step_size + i)
                             previous_task = ann
                 
                 task_annotations.append(annotation)
@@ -147,9 +150,9 @@ class CalvinDataLoader(Dataset):
         orig_data["subset"] = subset
 
         return orig_data
-    
 
-    def load_batch(self, batch_index):
+
+    def load_seqs_batch(self, batch_index):
         frames_static = []
         task_annotations = []
         key_state_indices = []
@@ -157,7 +160,7 @@ class CalvinDataLoader(Dataset):
         annotations = []
 
         for i, index in enumerate(self.ds_indices[batch_index]):
-            if i % self.stepsize != 0 and index not in self.key_state_stop_indices:
+            if i % self.step_size != 0 and index not in self.key_state_stop_indices:
                 continue
 
             try:
@@ -191,50 +194,48 @@ class CalvinDataLoader(Dataset):
         return {"frames": frames_static, "annotations": annotations, "task_annotations": task_annotations, "key_state_indices": key_state_indices, "key_state_labels": key_state_labels}
 
 
-    def get_single_problem(self, problem_index, start_range=0, end_range=0):
-        sample_anno_index = self.annotations["info"]["indx"][problem_index]
-        anno = self.annotations["language"]["task"][problem_index]
+    def get_single_seq(self, seq_index):
+        anno_seq_start_index, anno_seq_stop_index = self.annotations["info"]["indx"][seq_index]
+        anno_seq = self.annotations["language"]["task"][seq_index]
 
-        obs_task = []
-        for index in range(sample_anno_index[0] - start_range, sample_anno_index[1] + end_range):
+        obs_seq = []
+        for index in range(anno_seq_start_index, anno_seq_stop_index):
             try:
                 frame = np.load(os.path.join(self.dataset_path, f"episode_{index:07d}.npz"), allow_pickle=True)
-                obs_task.append(dict(frame))
+                obs_seq.append(dict(frame))
             except FileNotFoundError as e:
                 print(e)
                 pass
         
-        goal_img_index = start_range + 64 - 1
+        obs_seq = {key: [dic[key] for dic in obs_seq] for key in obs_seq[0]}
 
-        obs_task = {key: [dic[key] for dic in obs_task] for key in obs_task[0]}
+        return {"obs": obs_seq, "anno": anno_seq}
 
-        return obs_task, anno, goal_img_index
 
-    
-    def get_problem_range(self, start_problem_index, n_problems):
+    def get_n_seqs(self, start_seq_index, n_seqs):
         start_indices = np.array([index[0] for index in self.annotations["info"]["indx"]])
         sorted_indices = np.argsort(start_indices)
 
         sorted_info_index = list(np.array(self.annotations["info"]["indx"])[sorted_indices])
         sorted_annos = list(np.array(self.annotations["language"]["task"])[sorted_indices])
 
-        key_state_indices = [sorted_info_index[i][1] for i in range(start_problem_index, start_problem_index + n_problems)]
+        key_state_indices = [sorted_info_index[i][1] for i in range(start_seq_index, start_seq_index + n_seqs)]
 
         start_index = sorted_info_index[0][0]
         key_state_indices_local = [curr_index - sorted_info_index[0][1] for curr_index in key_state_indices]
         end_index = max(key_state_indices)
 
-        annos = sorted_annos[start_problem_index: start_problem_index + n_problems]
+        annos_seqs = sorted_annos[start_seq_index: start_seq_index + n_seqs]
 
-        obs_tasks = []
+        obs_seqs = []
         for index in range(start_index, end_index):
             try:
                 frame = np.load(os.path.join(self.dataset_path, f"episode_{index:07d}.npz"), allow_pickle=True)
-                obs_tasks.append(dict(frame))
+                obs_seqs.append(dict(frame))
             except FileNotFoundError as e:
                 print(e)
                 pass
         
-        obs_tasks = {key: [dic[key] for dic in obs_tasks] for key in obs_tasks[0]}
+        obs_seqs = {key: [dic[key] for dic in obs_seqs] for key in obs_seqs[0]}
 
-        return obs_tasks, annos, key_state_indices_local
+        return obs_seqs, annos_seqs, key_state_indices_local
