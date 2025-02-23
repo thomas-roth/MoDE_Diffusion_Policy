@@ -7,8 +7,9 @@ defaults:
 
 
 root_data_dir: /DATA/calvin/task_D_D
+vis_folder: /home/troth/bt/bt-trajectory-planning/models/MoDE_Diffusion_Policy/dataset/vis_clip_vit_b16
 lang_folder: /home/troth/bt/bt-trajectory-planning/models/MoDE_Diffusion_Policy/dataset/lang_clip_resnet50_gripper_detection # lang_clip_resnet50
-vis_clip_model_name: ViT-B/16
+clip_vis_model_name: ViT-B/16
 clip_lang_model_name: ViT-B/32
 
 log_dir: ./logs

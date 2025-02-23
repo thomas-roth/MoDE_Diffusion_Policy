@@ -25,13 +25,13 @@ proprioception_dims:
   normalize_robot_orientation: True
 
 datasets:
-  lang_dataset: 
+  vis_lang_dataset:
     _target_: mode.datasets.disk_dataset.ExtendedDiskDataset
     # _target_: mode.datasets.disk_dataset.BalancedLabeledSubsetDataset 
     # min_samples_per_task: 20  # Adjust based on your needs
      #subset_percentage: 0.1
     # subset_seed: ${seed}
-    key: "lang"
+    key: "vis-lang"
     save_format: "npz"
     batch_size: ${batch_size}
     min_window_size: ${act_seq_len}
@@ -40,7 +40,9 @@ datasets:
     obs_space: ${datamodule.observation_space}
     skip_frames: 1
     pad: false
+    vis_folder: ${vis_folder}
     lang_folder: ${lang_folder}
+    aux_vis_loss_window: 8
     aux_lang_loss_window: 8
     num_workers: ${num_workers}
     action_seq_len: ${act_seq_len}

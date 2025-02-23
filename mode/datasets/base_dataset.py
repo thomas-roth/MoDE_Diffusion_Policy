@@ -1,6 +1,6 @@
 import logging
 from pathlib import Path
-from typing import Dict, Tuple, Union
+from typing import Dict, Optional, Tuple, Union
 
 import numpy as np
 from omegaconf import DictConfig
@@ -12,7 +12,7 @@ from mode.datasets.utils.episode_utils import (
     get_state_info_dict,
     process_actions,
     process_depth,
-    process_language,
+    process_vision_language,
     process_rgb,
     process_state,
 )
@@ -45,7 +45,8 @@ class BaseDataset(Dataset):
         datasets_dir: Path of folder containing episode files (string must contain 'validation' or 'training').
         obs_space: DictConfig of observation space.
         proprio_state: DictConfig with shape of prioprioceptive state.
-        key: 'vis' or 'lang'.
+        key: 'vis' or 'vis-lang'.
+        vis_folder: Name of the subdirectory of the dataset containing the visual observations.
         lang_folder: Name of the subdirectory of the dataset containing the language annotations.
         num_workers: Number of dataloading workers for this dataset.
         transforms: Dict with pytorch data transforms.
@@ -53,6 +54,8 @@ class BaseDataset(Dataset):
         min_window_size: Minimum window length of loaded sequences.
         max_window_size: Maximum window length of loaded sequences.
         pad: If True, repeat last frame such that all sequences have length 'max_window_size'.
+        aux_vis_loss_window: How many sliding windows to consider for auxiliary visual losses, counted from the end
+            of an annotated language episode.
         aux_lang_loss_window: How many sliding windows to consider for auxiliary language losses, counted from the end
             of an annotated language episode.
     """
@@ -63,6 +66,7 @@ class BaseDataset(Dataset):
         obs_space: DictConfig,
         proprio_state: DictConfig,
         key: str,
+        vis_folder: str,
         lang_folder: str,
         num_workers: int,
         transforms: Dict = {},
@@ -70,6 +74,7 @@ class BaseDataset(Dataset):
         min_window_size: int = 16,
         max_window_size: int = 32,
         pad: bool = True,
+        aux_vis_loss_window: int = 1,
         aux_lang_loss_window: int = 1,
         window_sampling_strategy: str = 'random',
         geometric_p_value: float = 0.1,
@@ -77,7 +82,7 @@ class BaseDataset(Dataset):
         self.observation_space = obs_space
         self.proprio_state = proprio_state
         self.transforms = transforms
-        self.with_lang = key == "lang"
+        self.with_vis_lang = key == "vis-lang"
         self.relative_actions = "rel_actions" in self.observation_space["actions"]
         assert window_sampling_strategy in ('random', 'geometric')
         self.window_sampling_strategy = window_sampling_strategy
@@ -88,7 +93,9 @@ class BaseDataset(Dataset):
         self.min_window_size = min_window_size
         self.max_window_size = max_window_size
         self.abs_datasets_dir = datasets_dir
-        self.lang_folder = lang_folder  # if self.with_lang else None
+        self.vis_folder = vis_folder  # if self.with_vis_lang else None
+        self.lang_folder = lang_folder  # if self.with_vis_lang else None
+        self.aux_vis_loss_window = aux_vis_loss_window
         self.aux_lang_loss_window = aux_lang_loss_window
         assert "validation" in self.abs_datasets_dir.as_posix() or "training" in self.abs_datasets_dir.as_posix()
         self.validation = "validation" in self.abs_datasets_dir.as_posix()
@@ -108,7 +115,7 @@ class BaseDataset(Dataset):
         """
         if isinstance(idx, int):
             # When max_ws_size and min_ws_size are equal, avoid unnecessary padding
-            # acts like Constant dataset. Currently, used for language data
+            # acts like Constant dataset. Currently, used for vision-language data
             if self.min_window_size == self.max_window_size:
                 window_size = self.max_window_size
             elif self.min_window_size < self.max_window_size:
@@ -143,9 +150,9 @@ class BaseDataset(Dataset):
         seq_depth_obs = process_depth(episode, self.observation_space, self.transforms)
         seq_acts = process_actions(episode, self.observation_space, self.transforms)
         info = get_state_info_dict(episode)
-        seq_lang = process_language(episode, self.transforms, self.with_lang)
-        info = self._add_language_info(info, idx)
-        seq_dict = {**seq_state_obs, **seq_rgb_obs, **seq_depth_obs, **seq_acts, **info, **seq_lang}  # type:ignore
+        seq_vis_lang = process_vision_language(episode, self.transforms, self.with_vis_lang)
+        info = self._add_vision_language_info(info, idx)
+        seq_dict = {**seq_state_obs, **seq_rgb_obs, **seq_depth_obs, **seq_acts, **info, **seq_vis_lang}  # type:ignore
         seq_dict["idx"] = idx  # type:ignore
         return seq_dict
 
@@ -275,9 +282,9 @@ class BaseDataset(Dataset):
         padded = torch.vstack((input_tensor, zeros_repeated))
         return padded
 
-    def _add_language_info(self, info: Dict, idx: int) -> Dict:
+    def _add_vision_language_info(self, info: Dict, idx: int) -> Dict:
         """
-        If dataset contains language, add info to determine if this sequence will be used for the auxiliary losses.
+        If dataset contains vision-language, add info to determine if this sequence will be used for the auxiliary losses.
 
         Args:
             info: Info dictionary.
@@ -286,11 +293,19 @@ class BaseDataset(Dataset):
         Returns:
             Info dictionary with updated information.
         """
-        if not self.with_lang:
+        if not self.with_vis_lang:
             return info
+
+        use_for_aux_vis_loss = (
+            idx + self.aux_vis_loss_window >= len(self.vis_lookup)
+            or self.vis_lookup[idx] < self.vis_lookup[idx + self.aux_vis_loss_window]
+        )
         use_for_aux_lang_loss = (
             idx + self.aux_lang_loss_window >= len(self.lang_lookup)
             or self.lang_lookup[idx] < self.lang_lookup[idx + self.aux_lang_loss_window]
         )
+
+        info["use_for_aux_vis_loss"] = use_for_aux_vis_loss
         info["use_for_aux_lang_loss"] = use_for_aux_lang_loss
+
         return info
