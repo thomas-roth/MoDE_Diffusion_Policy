@@ -309,6 +309,8 @@ class VisionTransformer(nn.Module):
         x = self.ln_post(x[:, 0, :])
 
         if self.proj is not None:
+            # TODO?: x is float32, self.proj isfloat16 => ok to cast down or performance hurt?
+            x = x.to(self.proj.dtype)
             x = x @ self.proj
 
         return x

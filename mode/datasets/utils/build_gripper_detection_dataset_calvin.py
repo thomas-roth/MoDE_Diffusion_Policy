@@ -8,6 +8,7 @@ import hydra
 from pathlib import Path
 from omegaconf import OmegaConf
 from PIL import Image
+import torch
 from tqdm import tqdm
 from rdp import rdp
 
@@ -26,11 +27,12 @@ GIF_FRAME_QUANTIZATION_KMEANS = 1 # cluster changes of pixels allowed per kmeans
 GIF_DURATION = 67 # ms per frame => 67 ≈ 15 fps
 GIF_NUM_LOOPS = 0 # 0 = infinite
 DATASET_PATH = "/DATA/calvin/task_D_D"
-AUTO_LANG_ANN_FOLDER = "lang_clip_resnet50"
 
 # don't touch
 CALVIN_GRIPPER_WIDTH_OPEN = 1.0
 CALVIN_GRIPPER_WIDTH_CLOSED = -1.0
+CLIP_VIS_CFG_PATH = "models/MoDE_Diffusion_Policy/conf/model/mode_agent.yaml"
+AUTO_VIS_ANN_FOLDER = "vis_clip_vit_b16"
 
 
 logging.basicConfig(filename=f"{OUTPUT_DIR}/build_dataset.log", level=logging.INFO, format="%(asctime)s - %(message)s", filemode='w')
@@ -159,7 +161,11 @@ def build_conds_and_imgs(dataset_split, save_first_img_per_seq, save_gif_per_seq
 
     lang_conds_all_seqs = []
     imgs_all_seqs = []
-    for seq in tqdm(dataloader, total=len(dataloader), desc=f"Building dataset for {dataset_split} split"):
+    for i, seq in tqdm(enumerate(dataloader), total=len(dataloader), desc=f"Building dataset for {dataset_split} split"):
+        # TODO: remove after debugging
+        if i == 10:
+            break
+
         assert len(seq["obs"]["robot_obs"]) == len(seq["obs"]["rel_actions"]) == len(seq["obs"]["rgb_static"]) == len(seq["obs"]["rgb_gripper"])
 
         gripper_centers_world = np.array(seq["obs"]["robot_obs"])[:, :3]
@@ -204,31 +210,35 @@ def build_conds_and_imgs(dataset_split, save_first_img_per_seq, save_gif_per_seq
     return lang_conds_all_seqs, imgs_all_seqs
 
 
-def build_new_auto_lang_ann(lang_conds, dataset_split, timestamp):
-    lang_cond_explanation = "Use the following list of tuples enclosed by <ans> and </ans> tags as a guide for the trajectory of the end effector. " \
-                            "A tuple (x, y, z) denotes the 3D location of the end effector in world space. The tags <action> and </action> enclose a gripper action"
+def build_new_auto_vis_ann(imgs_annos_all_seqs, timestamp, dataset_split):
+    cfg_clip_vis = OmegaConf.load(CLIP_VIS_CFG_PATH).vision_goal
+    cfg_clip_vis.model_name = "ViT-B/16"
+    sys.path.append(str(Path(__file__).absolute().parents[3]))
+    clip_vis = hydra.utils.instantiate(cfg_clip_vis)
 
-    auto_lang_ann = np.load(f"{DATASET_PATH}/{dataset_split}/{AUTO_LANG_ANN_FOLDER}/auto_lang_ann.npy", allow_pickle=True)
-    for i, (task, lang_cond) in enumerate(zip(auto_lang_ann[np.newaxis][0]["language"]["ann"], lang_conds)):
-        auto_lang_ann[np.newaxis][0]["language"]["ann"][i] = f"{task}. {lang_cond_explanation}: {lang_cond}"
+    auto_vis_ann = np.array({"vision": {"ann": [], "emb": []}})
+    for imgs_anno_per_seq in imgs_annos_all_seqs:
+        first_static_img_of_seq = imgs_anno_per_seq["imgs"]["rgb_static"][0] # don't use rgb_gripper images as they don't show the traj well
+        first_static_img_of_seq_embedded = clip_vis([Image.fromarray(first_static_img_of_seq)])
 
-    lang_annos_output_dir = f"{OUTPUT_DIR}/{AUTO_LANG_ANN_FOLDER}/{timestamp}/{dataset_split}"
-    os.makedirs(lang_annos_output_dir, exist_ok=True)
+        auto_vis_ann[np.newaxis][0]["vision"]["ann"].append(first_static_img_of_seq)
+        auto_vis_ann[np.newaxis][0]["vision"]["emb"].append(first_static_img_of_seq_embedded)
+    
+    vis_annos_output_dir = f"{OUTPUT_DIR}/{AUTO_VIS_ANN_FOLDER}/{timestamp}/{dataset_split}"
+    os.makedirs(vis_annos_output_dir, exist_ok=True)
 
-    np.save(f"{lang_annos_output_dir}/auto_lang_ann.npy", auto_lang_ann)
+    np.save(f"{vis_annos_output_dir}/auto_vis_ann.npy", auto_vis_ann)
 
-    # TODO: update embeddings (inference with lang clip?)
-
-    print(f"Built new auto lang annotations for {dataset_split} split")
+    print(f"Built new auto vis annotations for {dataset_split} split")
 
 
 def build_dataset(save_first_img_per_seq=False, save_gif_per_seq=False):
     timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 
     for dataset_split in ["training", "validation"]:
-        lang_conds, _ = build_conds_and_imgs(dataset_split, save_first_img_per_seq, save_gif_per_seq)
-        build_new_auto_lang_ann(lang_conds, dataset_split, timestamp)
+        _, imgs_annos_all_seqs = build_conds_and_imgs(dataset_split, save_first_img_per_seq, save_gif_per_seq)
+        build_new_auto_vis_ann(imgs_annos_all_seqs, timestamp, dataset_split)
 
 
 if __name__ == '__main__':
-    build_dataset(save_first_img_per_seq=True, save_gif_per_seq=True)
+    build_dataset(save_first_img_per_seq=False, save_gif_per_seq=False)
