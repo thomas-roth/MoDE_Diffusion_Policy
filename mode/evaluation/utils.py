@@ -127,7 +127,7 @@ def get_default_model_and_env(train_folder, dataset_path, checkpoint, env=None, 
     device = torch.device(f"cuda:{device_id}")
 
     if lang_embeddings is None:
-        lang_embeddings = LangEmbeddings(dataset.abs_datasets_dir, lang_folder, device=device)
+        lang_embeddings = VisLangEmbeddings(dataset.abs_datasets_dir, lang_folder, device=device)
 
     if env is None:
         rollout_cfg = OmegaConf.load(Path(__file__).parents[2] / "conf/callbacks/rollout/default.yaml")
@@ -182,7 +182,7 @@ def get_default_mode_and_env(train_folder, dataset_path, checkpoint, env=None, l
         dataset = dataloader["lang"].dataset
 
         if lang_embeddings is None:
-            lang_embeddings = LangEmbeddings(dataset.abs_datasets_dir, lang_folder, device=device)
+            lang_embeddings = VisLangEmbeddings(dataset.abs_datasets_dir, lang_folder, device=device)
 
         if env is None:
             rollout_cfg = OmegaConf.load(Path(__file__).parents[2] / "conf/callbacks/rollout_lh/calvin.yaml")
@@ -245,15 +245,16 @@ def join_vis_lang(img, lang_text):
     cv2.waitKey(1)
 
 
-class LangEmbeddings:
-    def __init__(self, val_dataset_path, lang_folder, device=torch.device("cuda:0")):
-        embeddings = np.load(Path(val_dataset_path) / lang_folder / "embeddings.npy", allow_pickle=True).item()
+class VisLangEmbeddings:
+    def __init__(self, val_dataset_path, vis_lang_folder, device=torch.device("cuda:0")):
+        embeddings = np.load(Path(val_dataset_path) / vis_lang_folder / "validation" / "embeddings.npy", allow_pickle=True).item()
         # we want to get the embedding for full sentence, not just a task name
-        self.lang_embeddings = {v["ann"][0]: v["emb"] for k, v in embeddings.items()}
+        self.vis_lang_embeddings = {task_data["lang_ann"][0]: {"vis": task_data["vis_emb"], "lang": task_data["lang_emb"]} for task, task_data in embeddings.items()}
         self.device = device
 
-    def get_lang_goal(self, task):
-        return {"lang": torch.from_numpy(self.lang_embeddings[task]).to(self.device).squeeze(0).float()}
+    def get_vis_lang_goal(self, task):
+        return {"vis": torch.from_numpy(self.vis_lang_embeddings[task]["vis"]).to(self.device).squeeze(0).float(),
+                "lang": torch.from_numpy(self.vis_lang_embeddings[task]["lang"]).to(self.device).squeeze(0).float()}
 
 
 def imshow_tensor(window, img_tensor, wait=0, resize=True, keypoints=None, text=None):

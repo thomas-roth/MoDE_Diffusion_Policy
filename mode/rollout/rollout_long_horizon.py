@@ -14,7 +14,7 @@ import torch.distributed as dist
 from tqdm import tqdm
 
 from mode.evaluation.multistep_sequences import get_sequences
-from mode.evaluation.utils import get_env_state_for_initial_condition, join_vis_lang, LangEmbeddings
+from mode.evaluation.utils import get_env_state_for_initial_condition, join_vis_lang, VisLangEmbeddings
 from mode.rollout.rollout_video import RolloutVideo
 from mode.models.mode_agent import MoDEAgent
 
@@ -113,7 +113,7 @@ class RolloutLongHorizon(Callback):
         tasks,
         log_video_to_file,
         save_dir,
-        lang_folder,
+        vis_lang_folder,
         empty_cache,
         val_annotations,
         debug,
@@ -133,8 +133,8 @@ class RolloutLongHorizon(Callback):
         self.rollout_video = None  # type: Any
         self.empty_cache = empty_cache
         self.device = None  # type: Any
-        self.lang_embeddings = None
-        self.lang_folder = lang_folder
+        self.vis_lang_embeddings = None
+        self.vis_lang_folder = vis_lang_folder
         self.eval_sequences = None
         self.val_annotations = val_annotations
         self.debug = debug
@@ -185,9 +185,9 @@ class RolloutLongHorizon(Callback):
                     )
 
                 # Initialize language embeddings with the dataset
-                self.lang_embeddings = LangEmbeddings(
+                self.vis_lang_embeddings = VisLangEmbeddings(
                     dataset.abs_datasets_dir, 
-                    dataset.lang_folder, 
+                    dataset.vis_lang_folder, 
                     device=pl_module.device
                 )
 
@@ -297,9 +297,9 @@ class RolloutLongHorizon(Callback):
         obs = self.env.get_obs()
         # get lang annotation for subtask
         lang_annotation = self.val_annotations[subtask][0]
-        # get language goal embedding
-        goal = self.lang_embeddings.get_lang_goal(lang_annotation)
-        goal['lang_text'] = lang_annotation
+        # get vision-language goal embedding
+        goal = self.vis_lang_embeddings.get_vis_lang_goal(lang_annotation)
+        goal['lang_text'] = lang_annotation # FIXME?: "vis_image" key missing? (not required if model.use_image_text_not_embedding == False)
         model.reset()
         start_info = self.env.get_info()
         success = False

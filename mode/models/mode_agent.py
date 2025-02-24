@@ -1,6 +1,6 @@
 import logging
 import os
-from typing import Any, Dict, Optional, Tuple, List, DefaultDict
+from typing import Any, Dict, Optional, Tuple
 from functools import partial
 import seaborn as sns
 
@@ -8,11 +8,10 @@ import torch
 import hydra
 from omegaconf import DictConfig, OmegaConf
 import pytorch_lightning as pl
-from pytorch_lightning.utilities import rank_zero_info, rank_zero_only
+from pytorch_lightning.utilities import rank_zero_only
 import einops 
 import wandb
 
-from torchmetrics import MeanMetric
 from mode.models.edm_diffusion.gc_sampling import *
 import mode.models.edm_diffusion.utils as utils
 from mode.utils.lr_schedulers.tri_stage_scheduler import TriStageLRScheduler
@@ -20,7 +19,7 @@ from mode.callbacks.ema import EMA
 from mode.models.perceptual_encoders.resnets import ResNetEncoderWithFiLM
 from mode.models.perceptual_encoders.pretrained_resnets import FiLMResNet34Policy, FiLMResNet50Policy
 from mode.models.networks.modedit import NoiseBlockMoE 
-from mode.utils.lang_buffer import AdvancedLangEmbeddingBuffer
+from mode.utils.vis_lang_buffers import AdvancedVisLangEmbeddingBuffers
 
 
 logger = logging.getLogger(__name__)
@@ -44,6 +43,7 @@ class MoDEAgent(pl.LightningModule):
     """
     def __init__(
         self,
+        vision_goal: DictConfig,
         language_goal: DictConfig,
         model: DictConfig,
         optimizer: DictConfig,
@@ -66,7 +66,7 @@ class MoDEAgent(pl.LightningModule):
         entropy_gamma: float = 0.0,
         router_z_delta: float = 0.001,
         start_from_pretrained: bool = False,
-        use_text_not_embedding: bool = True,
+        use_image_text_not_embedding: bool = True,
         use_proprio: bool = False,
         act_window_size: int = 10,
         resnet_type: str = '18', 
@@ -91,14 +91,15 @@ class MoDEAgent(pl.LightningModule):
         self.gripper_resnet = ResNetClass(cond_dim)
         self.use_perceiver = use_perceiver
         self.use_film_resnet = True
-        self.use_text_not_embedding = use_text_not_embedding
+        self.use_image_text_not_embedding = use_image_text_not_embedding
         self.act_window_size = act_window_size
         self.seed = seed
         self.use_lr_scheduler = use_lr_scheduler
         self.use_proprio = use_proprio
         # goal encoders
         self.language_goal = hydra.utils.instantiate(language_goal) if language_goal else None
-        self.modality_scope = "lang"
+        self.vision_goal = hydra.utils.instantiate(vision_goal) if vision_goal else None
+        self.modality_scope = "vis_lang"
         self.optimizer_config = optimizer
         self.lr_scheduler = lr_scheduler
         self.entropy_gamma = entropy_gamma
@@ -129,7 +130,7 @@ class MoDEAgent(pl.LightningModule):
 
         self.need_precompute_experts_for_inference = False
 
-        self.lang_buffer = AdvancedLangEmbeddingBuffer(self.language_goal, 10000)
+        self.vis_lang_buffers = AdvancedVisLangEmbeddingBuffers(self.vision_goal, self.language_goal, vis_goal_buffer_size=1000, lang_goal_buffer_size=10000)
 
     def load_pretrained_parameters(self, ckpt_path, strict: bool = False):
         """
@@ -530,13 +531,12 @@ class MoDEAgent(pl.LightningModule):
         latent_goal = None
         # last images are the randomly sampled future goal images for models learned with image goals 
         rgb_static = dataset_batch["rgb_obs"]['rgb_static'] # [:, :-1]
-        rgb_gripper = dataset_batch["rgb_obs"]['rgb_gripper'] #[:, :-1]
+        rgb_gripper = dataset_batch["rgb_obs"]['rgb_gripper'] # [:, :-1]
 
-        if self.use_text_not_embedding:
-            # latent_goal = self.language_goal(dataset_batch["lang_text"]).to(rgb_static.dtype)
-            latent_goal = self.lang_buffer.get_goal_instruction_embeddings(dataset_batch["lang_text"]).to(rgb_static.dtype)
+        if self.use_image_text_not_embedding:
+            latent_goal = self.vis_lang_buffers.get_vis_lang_goal_embeddings(dataset_batch["vis_image"], dataset_batch["lang_text"]).to(rgb_static.dtype)
         else:
-            latent_goal = self.language_goal(dataset_batch["lang"]).to(rgb_static.dtype)
+            latent_goal = torch.cat(self.vision_goal(dataset_batch["vis"]), self.language_goal(dataset_batch["lang"])).to(rgb_static.dtype)
 
         perceptual_emb = self.embed_visual_obs(rgb_static, rgb_gripper, latent_goal)
 
@@ -585,12 +585,10 @@ class MoDEAgent(pl.LightningModule):
         """
         Method for doing inference with the model.
         """
-        if self.use_text_not_embedding:
-            # latent_goal = self.language_goal(goal["lang_text"])
-            latent_goal = self.lang_buffer.get_goal_instruction_embeddings(goal["lang_text"])
-            latent_goal = latent_goal.to(torch.float32)
+        if self.use_image_text_not_embedding:
+            latent_goal = self.vis_lang_buffers.get_vis_lang_goal_embeddings(goal["vis_image"], goal["lang_text"]).to(torch.float32)
         else:
-            latent_goal = self.language_goal(goal["lang"]).unsqueeze(0).to(torch.float32).to(obs["rgb_obs"]['rgb_static'].device)
+            latent_goal = torch.cat(self.vision_goal(goal["vis"]), self.language_goal(goal["lang"])).unsqueeze(0).to(torch.float32).to(obs["rgb_obs"]['rgb_static'].device)
         if self.need_precompute_experts_for_inference:
             self.precompute_expert_for_inference(latent_goal)
             self.need_precompute_experts_for_inference = False

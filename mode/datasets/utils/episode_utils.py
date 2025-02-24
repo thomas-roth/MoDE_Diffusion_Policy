@@ -144,15 +144,21 @@ def process_actions(
     return {"actions": seq_acts}
 
 
-def process_language(episode: Dict[str, np.ndarray], transforms: Dict, with_lang: bool) -> Dict[str, torch.Tensor]:
-    seq_lang = {"lang": torch.empty(0)}
-    if with_lang:
+def process_vision_language(episode: Dict[str, np.ndarray], transforms: Dict, with_vis_lang: bool) -> Dict[str, torch.Tensor]:
+    seq_vis_lang = {"vis": torch.empty(0), "lang": torch.empty(0)}
+    if with_vis_lang:
+        vision = torch.from_numpy(episode["vision"]).float()
+        if "vision" in transforms:
+            vision = transforms["vision"](vision)
+        seq_vis_lang["vis"] = vision
+        seq_vis_lang['vis_image'] = episode['vision_image']
+
         lang = torch.from_numpy(episode["language"]).float()
         if "language" in transforms:
             lang = transforms["language"](lang)
-        seq_lang["lang"] = lang
-        seq_lang['lang_text']  = episode['language_text']
-    return seq_lang
+        seq_vis_lang["lang"] = lang
+        seq_vis_lang['lang_text']  = episode['language_text']
+    return seq_vis_lang
 
 
 def get_state_info_dict(episode: Dict[str, np.ndarray]) -> Dict[str, Dict[str, torch.Tensor]]:
