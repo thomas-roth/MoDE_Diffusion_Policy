@@ -1,6 +1,6 @@
 import logging
 from pathlib import Path
-from typing import Dict, Optional, Tuple, Union
+from typing import Dict, Tuple, Union
 
 import numpy as np
 from omegaconf import DictConfig
@@ -45,9 +45,8 @@ class BaseDataset(Dataset):
         datasets_dir: Path of folder containing episode files (string must contain 'validation' or 'training').
         obs_space: DictConfig of observation space.
         proprio_state: DictConfig with shape of prioprioceptive state.
-        key: 'vis' or 'vis-lang'.
-        vis_folder: Name of the subdirectory of the dataset containing the visual observations.
-        lang_folder: Name of the subdirectory of the dataset containing the language annotations.
+        key: 'vis' or 'vis_lang'.
+        vis_lang_folder: Name of the subdirectory of the dataset containing the vision-language annotations.
         num_workers: Number of dataloading workers for this dataset.
         transforms: Dict with pytorch data transforms.
         batch_size: Batch size.
@@ -66,23 +65,21 @@ class BaseDataset(Dataset):
         obs_space: DictConfig,
         proprio_state: DictConfig,
         key: str,
-        vis_folder: str,
-        lang_folder: str,
+        vis_lang_folder: str,
         num_workers: int,
         transforms: Dict = {},
         batch_size: int = 32,
         min_window_size: int = 16,
         max_window_size: int = 32,
         pad: bool = True,
-        aux_vis_loss_window: int = 1,
-        aux_lang_loss_window: int = 1,
+        aux_vis_lang_loss_window: int = 1,
         window_sampling_strategy: str = 'random',
         geometric_p_value: float = 0.1,
     ):
         self.observation_space = obs_space
         self.proprio_state = proprio_state
         self.transforms = transforms
-        self.with_vis_lang = key == "vis-lang"
+        self.with_vis_lang = key == "vis_lang"
         self.relative_actions = "rel_actions" in self.observation_space["actions"]
         assert window_sampling_strategy in ('random', 'geometric')
         self.window_sampling_strategy = window_sampling_strategy
@@ -93,10 +90,8 @@ class BaseDataset(Dataset):
         self.min_window_size = min_window_size
         self.max_window_size = max_window_size
         self.abs_datasets_dir = datasets_dir
-        self.vis_folder = vis_folder  # if self.with_vis_lang else None
-        self.lang_folder = lang_folder  # if self.with_vis_lang else None
-        self.aux_vis_loss_window = aux_vis_loss_window
-        self.aux_lang_loss_window = aux_lang_loss_window
+        self.vis_lang_folder = vis_lang_folder  # if self.with_vis_lang else None
+        self.aux_vis_lang_loss_window = aux_vis_lang_loss_window
         assert "validation" in self.abs_datasets_dir.as_posix() or "training" in self.abs_datasets_dir.as_posix()
         self.validation = "validation" in self.abs_datasets_dir.as_posix()
         assert self.abs_datasets_dir.is_dir()
@@ -296,16 +291,11 @@ class BaseDataset(Dataset):
         if not self.with_vis_lang:
             return info
 
-        use_for_aux_vis_loss = (
-            idx + self.aux_vis_loss_window >= len(self.vis_lookup)
-            or self.vis_lookup[idx] < self.vis_lookup[idx + self.aux_vis_loss_window]
-        )
-        use_for_aux_lang_loss = (
-            idx + self.aux_lang_loss_window >= len(self.lang_lookup)
-            or self.lang_lookup[idx] < self.lang_lookup[idx + self.aux_lang_loss_window]
+        use_for_aux_vis_lang_loss = (
+            idx + self.aux_vis_lang_loss_window >= len(self.vis_lang_lookup)
+            or self.vis_lang_lookup[idx] < self.vis_lang_lookup[idx + self.aux_vis_lang_loss_window]
         )
 
-        info["use_for_aux_vis_loss"] = use_for_aux_vis_loss
-        info["use_for_aux_lang_loss"] = use_for_aux_lang_loss
+        info["use_for_aux_vis_lang_loss"] = use_for_aux_vis_lang_loss
 
         return info

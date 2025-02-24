@@ -46,9 +46,9 @@ class HulcDataModule(pl.LightningDataModule):
         self.modalities: List[str] = []
         self.transforms = transforms
 
-        if 'lang_dataset' in self.datasets_cfg: 
-            if "shm_dataset" in self.datasets_cfg.lang_dataset._target_:
-                self.use_shm = "shm_dataset" in self.datasets_cfg.lang_dataset._target_
+        if 'vis_lang_dataset' in self.datasets_cfg: 
+            if "shm_dataset" in self.datasets_cfg.vis_lang_dataset._target_:
+                self.use_shm = "shm_dataset" in self.datasets_cfg.vis_lang_dataset._target_
             else:
                 self.use_shm = False
         elif 'shm_dataset' in self.datasets_cfg.vision_dataset._target_:

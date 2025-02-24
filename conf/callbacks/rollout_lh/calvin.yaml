@@ -14,6 +14,5 @@ ep_len: 360
 empty_cache: false
 log_video_to_file: False
 save_dir: ./videos
-vis_folder: ${vis_folder}
-lang_folder: ${lang_folder} # ${datamodule.datasets.lang_dataset.lang_folder}
+vis_lang_folder: ${vis_lang_folder}
 debug: false

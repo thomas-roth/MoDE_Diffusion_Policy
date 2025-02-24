@@ -15,9 +15,6 @@ class AdvancedVisLangEmbeddingBuffers:
         self.buffer_lock = threading.Lock()
 
     def get_or_encode_vis_lang_batch(self, images, texts):
-        # print(images)
-        # print(texts)
-
         if isinstance(texts, str):
             texts = [texts]
 
@@ -43,14 +40,14 @@ class AdvancedVisLangEmbeddingBuffers:
                 encoded_images = [self.vis_goal_buffer[image] for image in images]
                 encoded_texts = [self.lang_goal_buffer[text] for text in texts]
             
-            encoded_goal = [torch.cat((encoded_image, encoded_text)) for encoded_image, encoded_text in zip(encoded_images, encoded_texts)]
+            encoded_goal = encoded_images + encoded_texts
             return torch.stack(encoded_goal)
 
         except Exception as e:
             print(f"Error encoding images and texts: {e}")
             # If all else fails, return dummy tensors
             # Assuming the output dimensions of the vision and language encoders are known
-            return torch.zeros((len(images), self.vision_encoder.output_dim)), torch.zeros((len(texts), self.language_encoder.output_dim))
+            return torch.stack(torch.zeros((len(images), self.vision_encoder.output_dim)), torch.zeros((len(texts), self.language_encoder.output_dim)))
     
     def preprocess_image(self, image_path):
         image = Image.open(image_path).convert("RGB")

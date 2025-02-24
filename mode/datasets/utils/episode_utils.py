@@ -151,6 +151,7 @@ def process_vision_language(episode: Dict[str, np.ndarray], transforms: Dict, wi
         if "vision" in transforms:
             vision = transforms["vision"](vision)
         seq_vis_lang["vis"] = vision
+        seq_vis_lang['vis_image'] = episode['vision_image']
 
         lang = torch.from_numpy(episode["language"]).float()
         if "language" in transforms:

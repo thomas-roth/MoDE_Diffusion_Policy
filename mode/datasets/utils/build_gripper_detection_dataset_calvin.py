@@ -32,7 +32,8 @@ DATASET_PATH = "/DATA/calvin/task_D_D"
 CALVIN_GRIPPER_WIDTH_OPEN = 1.0
 CALVIN_GRIPPER_WIDTH_CLOSED = -1.0
 CLIP_VIS_CFG_PATH = "models/MoDE_Diffusion_Policy/conf/model/mode_agent.yaml"
-AUTO_VIS_ANN_FOLDER = "vis_clip_vit_b16"
+AUTO_LANG_ANN_FOLDER = "lang_clip_resnet50"
+AUTO_VIS_LANG_ANN_FOLDER = "vis_lang_clip_vit-b16_resnet50"
 
 
 logging.basicConfig(filename=f"{OUTPUT_DIR}/build_dataset.log", level=logging.INFO, format="%(asctime)s - %(message)s", filemode='w')
@@ -51,28 +52,28 @@ def simplify_trajectory(gripper_centers, gripper_widths):
     return gripper_centers_simplified, gripper_widths_simplified
 
 
-def build_lang_conditioning(gripper_centers, gripper_widths):
+def build_trajectory_string(gripper_centers, gripper_widths):
     # gripper centers in world space => 3D
 
     is_gripper_open = gripper_widths[0] == CALVIN_GRIPPER_WIDTH_OPEN
 
-    conditioning_contents = []
+    traj_string_contents = []
     for (gripper_center, gripper_width) in zip(gripper_centers, gripper_widths):
         # TODO?: normalize/scale (values between -1 and 1, but mostly around 0)
         rounded_gripper_center_x = round(gripper_center[0], LANG_COND_COORDS_PRECISION)
         rounded_gripper_center_y = round(gripper_center[1], LANG_COND_COORDS_PRECISION)
         rounded_gripper_center_z = round(gripper_center[2], LANG_COND_COORDS_PRECISION)
 
-        conditioning_contents.append(f"({rounded_gripper_center_x}, {rounded_gripper_center_y}, {rounded_gripper_center_z})")
+        traj_string_contents.append(f"({rounded_gripper_center_x}, {rounded_gripper_center_y}, {rounded_gripper_center_z})")
         
         if is_gripper_open and gripper_width == CALVIN_GRIPPER_WIDTH_CLOSED:
-            conditioning_contents.append("<action>Close Gripper</action>")
+            traj_string_contents.append("<action>Close Gripper</action>")
             is_gripper_open = False
         elif not is_gripper_open and gripper_width == CALVIN_GRIPPER_WIDTH_OPEN:
-            conditioning_contents.append("<action>Open Gripper</action>")
+            traj_string_contents.append("<action>Open Gripper</action>")
             is_gripper_open = True
     
-    return "<ans>[" + str.join(", ", conditioning_contents) + "]</ans>"
+    return "<ans>[" + str.join(", ", traj_string_contents) + "]</ans>"
 
 
 def project_gripper_centers_to_cam(env, gripper_centers_world, cam_id):
@@ -90,7 +91,7 @@ def project_gripper_centers_to_cam(env, gripper_centers_world, cam_id):
     return np.transpose(gripper_centers_projected)
 
 
-def draw_trajectory(img, gripper_centers, gripper_widths):
+def draw_trajectory_onto_img(img, gripper_centers, gripper_widths):
     # gripper centers in image space => 2D
 
     img_copy = img.copy()
@@ -149,7 +150,7 @@ def save_imgs_gifs_to_disk(imgs_all_seqs, dataset_split, save_first_img_per_seq,
                                    duration=GIF_DURATION, loop=GIF_NUM_LOOPS)
 
 
-def build_conds_and_imgs(dataset_split, save_first_img_per_seq, save_gif_per_seq):
+def build_trajectories(dataset_split, save_first_img_per_seq, save_gif_per_seq):
     env_conf = OmegaConf.load(f"{DATASET_PATH}/{dataset_split}/.hydra/merged_config.yaml")
     del env_conf.cameras["tactile"] # not relevant for this task & breaks hydra instantiation
     env = hydra.utils.instantiate(env_conf.env, use_vr=False, use_scene_info=True)
@@ -159,12 +160,14 @@ def build_conds_and_imgs(dataset_split, save_first_img_per_seq, save_gif_per_seq
     
     lengths_simplified_trajs = []
 
-    lang_conds_all_seqs = []
-    imgs_all_seqs = []
+    traj_strings_all_seqs = []
+    traj_imgs_all_seqs = []
     for i, seq in tqdm(enumerate(dataloader), total=len(dataloader), desc=f"Building dataset for {dataset_split} split"):
+        """
         # TODO: remove after debugging
-        if i == 10:
+        if i == 256:
             break
+        """
 
         assert len(seq["obs"]["robot_obs"]) == len(seq["obs"]["rel_actions"]) == len(seq["obs"]["rgb_static"]) == len(seq["obs"]["rgb_gripper"])
 
@@ -178,12 +181,12 @@ def build_conds_and_imgs(dataset_split, save_first_img_per_seq, save_gif_per_seq
         simplified_gripper_centers_world, simplified_gripper_widths = simplify_trajectory(gripper_centers_world, gripper_widths)
         lengths_simplified_trajs.append(len(simplified_gripper_centers_world))
 
-        # build lang conditioning for simplified trajectory in world space
-        lang_cond_per_seq = build_lang_conditioning(simplified_gripper_centers_world, simplified_gripper_widths)
-        lang_conds_all_seqs.append(lang_cond_per_seq)
+        # build trajectory strings for simplified trajectory in world space
+        traj_string_per_seq = build_trajectory_string(simplified_gripper_centers_world, simplified_gripper_widths)
+        traj_strings_all_seqs.append(traj_string_per_seq)
 
         # project simplified trajectory to image spaces & draw on images
-        imgs_per_seq = {"rgb_static": [], "rgb_gripper": []}
+        traj_imgs_per_seq = {"rgb_static": [], "rgb_gripper": []}
         for cam_id, cam_name in enumerate(["rgb_static", "rgb_gripper"]):            
             for timestep in range(len(seq["obs"]["robot_obs"])):
                 # project gripper centers to both cams for first timestep
@@ -193,51 +196,68 @@ def build_conds_and_imgs(dataset_split, save_first_img_per_seq, save_gif_per_seq
                     simplified_gripper_centers_projected = project_gripper_centers_to_cam(env, simplified_gripper_centers_world, cam_id)
 
                 img = seq["obs"][cam_name][timestep]
-                img_with_traj = draw_trajectory(img, simplified_gripper_centers_projected, simplified_gripper_widths)
+                img_with_traj = draw_trajectory_onto_img(img, simplified_gripper_centers_projected, simplified_gripper_widths)
 
-                imgs_per_seq[cam_name].append(img_with_traj)
+                traj_imgs_per_seq[cam_name].append(img_with_traj)
 
                 if not save_gif_per_seq:
                     # only first frame of each sequence needed
                     break
-        imgs_all_seqs.append({"imgs": imgs_per_seq, "anno": seq["anno"]})
+        traj_imgs_all_seqs.append({"imgs": traj_imgs_per_seq, "anno": seq["anno"]})
 
     logging.info(f"Average trajectory length: {np.mean(lengths_simplified_trajs)}")
 
     if save_first_img_per_seq or save_gif_per_seq:
-        save_imgs_gifs_to_disk(imgs_all_seqs, dataset_split, save_first_img_per_seq, save_gif_per_seq)
+        save_imgs_gifs_to_disk(traj_imgs_all_seqs, dataset_split, save_first_img_per_seq, save_gif_per_seq)
 
-    return lang_conds_all_seqs, imgs_all_seqs
+    return traj_strings_all_seqs, traj_imgs_all_seqs
 
 
-def build_new_auto_vis_ann(imgs_annos_all_seqs, timestamp, dataset_split):
+def embed_and_save_trajectory_imgs(traj_imgs_annos_all_seqs, timestamp, dataset_split):
     cfg_clip_vis = OmegaConf.load(CLIP_VIS_CFG_PATH).vision_goal
     cfg_clip_vis.model_name = "ViT-B/16"
     sys.path.append(str(Path(__file__).absolute().parents[3]))
     clip_vis = hydra.utils.instantiate(cfg_clip_vis)
 
-    auto_vis_ann = np.array({"vision": {"ann": [], "emb": []}})
-    for imgs_anno_per_seq in imgs_annos_all_seqs:
-        first_static_img_of_seq = imgs_anno_per_seq["imgs"]["rgb_static"][0] # don't use rgb_gripper images as they don't show the traj well
-        first_static_img_of_seq_embedded = clip_vis([Image.fromarray(first_static_img_of_seq)])
+    # build auto_vis_lang_ann.npy (load auto_lang_ann and add vision annotations)
+    auto_lang_ann = np.load(f"{DATASET_PATH}/{dataset_split}/{AUTO_LANG_ANN_FOLDER}/auto_lang_ann.npy", allow_pickle=True).item()
+    auto_vis_lang_ann = {"vision": {"ann": [], "emb": []}, "language": auto_lang_ann["language"], "info": auto_lang_ann["info"]}
+    for traj_imgs_anno_per_seq in traj_imgs_annos_all_seqs:
+        first_static_traj_img = traj_imgs_anno_per_seq["imgs"]["rgb_static"][0] # don't use rgb_gripper imgs as they don't show the traj well
+        first_static_traj_img_embedded = clip_vis([Image.fromarray(first_static_traj_img)])
 
-        auto_vis_ann[np.newaxis][0]["vision"]["ann"].append(first_static_img_of_seq)
-        auto_vis_ann[np.newaxis][0]["vision"]["emb"].append(first_static_img_of_seq_embedded)
+        auto_vis_lang_ann["vision"]["ann"].append(first_static_traj_img)
+        auto_vis_lang_ann["vision"]["emb"].append(first_static_traj_img_embedded)
+    auto_vis_lang_ann["vision"]["ann"] = np.stack(auto_vis_lang_ann["vision"]["ann"])[np.newaxis, :]
+    auto_vis_lang_ann["vision"]["emb"] = torch.stack(auto_vis_lang_ann["vision"]["emb"]).cpu().numpy()
     
-    vis_annos_output_dir = f"{OUTPUT_DIR}/{AUTO_VIS_ANN_FOLDER}/{timestamp}/{dataset_split}"
-    os.makedirs(vis_annos_output_dir, exist_ok=True)
+    vis_lang_ann_output_dir = f"{OUTPUT_DIR}/{AUTO_VIS_LANG_ANN_FOLDER}/{timestamp}/{dataset_split}"
+    os.makedirs(vis_lang_ann_output_dir, exist_ok=True)
+    np.save(f"{vis_lang_ann_output_dir}/auto_vis_lang_ann.npy", auto_vis_lang_ann)
 
-    np.save(f"{vis_annos_output_dir}/auto_vis_ann.npy", auto_vis_ann)
+    if dataset_split == "validation":
+        # build embeddings.npy
+        tasks = list(set([traj_imgs_anno_per_seq["anno"] for traj_imgs_anno_per_seq in traj_imgs_annos_all_seqs]))
+        embeddings = {}
+        for i in range(len(tasks)):
+            embeddings[tasks[i]] = {"emb": [], "vis_emb": [], "lang_emb": [], "vis_ann": [], "lang_ann": []}
+            embeddings[tasks[i]]["emb"] = np.concatenate((auto_vis_lang_ann["vision"]["emb"][i], auto_vis_lang_ann["language"]["emb"][i]), axis=-1)[np.newaxis, :]
+            embeddings[tasks[i]]["vis_emb"] = auto_vis_lang_ann["vision"]["emb"][i][np.newaxis, :]
+            embeddings[tasks[i]]["lang_emb"] = auto_vis_lang_ann["language"]["emb"][i][np.newaxis, :]
+            embeddings[tasks[i]]["vis_ann"].append(auto_vis_lang_ann["vision"]["ann"][:, i])
+            embeddings[tasks[i]]["lang_ann"].append(auto_vis_lang_ann["language"]["ann"][i])
+        
+        np.save(f"{vis_lang_ann_output_dir}/embeddings.npy", embeddings)
 
-    print(f"Built new auto vis annotations for {dataset_split} split")
+    print(f"Built vision-language annotations for {dataset_split} split")
 
 
 def build_dataset(save_first_img_per_seq=False, save_gif_per_seq=False):
     timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 
     for dataset_split in ["training", "validation"]:
-        _, imgs_annos_all_seqs = build_conds_and_imgs(dataset_split, save_first_img_per_seq, save_gif_per_seq)
-        build_new_auto_vis_ann(imgs_annos_all_seqs, timestamp, dataset_split)
+        _, traj_imgs_annos_all_seqs = build_trajectories(dataset_split, save_first_img_per_seq, save_gif_per_seq)
+        embed_and_save_trajectory_imgs(traj_imgs_annos_all_seqs, timestamp, dataset_split)
 
 
 if __name__ == '__main__':

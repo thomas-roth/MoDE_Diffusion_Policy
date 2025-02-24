@@ -15,6 +15,7 @@ observation_space:
   depth_obs: []
   state_obs: ['robot_obs']
   actions: ['rel_actions']
+  vision: ['vision'] # TODO: needed?
   language: ['language']
 
 proprioception_dims:
@@ -31,7 +32,7 @@ datasets:
     # min_samples_per_task: 20  # Adjust based on your needs
      #subset_percentage: 0.1
     # subset_seed: ${seed}
-    key: "vis-lang"
+    key: "vis_lang"
     save_format: "npz"
     batch_size: ${batch_size}
     min_window_size: ${act_seq_len}
@@ -40,10 +41,8 @@ datasets:
     obs_space: ${datamodule.observation_space}
     skip_frames: 1
     pad: false
-    vis_folder: ${vis_folder}
-    lang_folder: ${lang_folder}
-    aux_vis_loss_window: 8
-    aux_lang_loss_window: 8
+    vis_lang_folder: ${vis_lang_folder}
+    aux_vis_lang_loss_window: 8
     num_workers: ${num_workers}
     action_seq_len: ${act_seq_len}
     obs_seq_len: ${obs_seq_len}

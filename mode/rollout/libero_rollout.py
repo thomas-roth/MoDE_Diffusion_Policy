@@ -28,7 +28,7 @@ from libero.lifelong.utils import (get_task_embs, safe_device, create_experiment
 # sys.path.insert(0, Path(__file__).absolute().parents[2].as_posix())
 
 from mode.evaluation.multistep_sequences import get_sequences
-from mode.evaluation.utils import get_env_state_for_initial_condition, join_vis_lang, LangEmbeddings
+from mode.evaluation.utils import get_env_state_for_initial_condition, join_vis_lang, VisLangEmbeddings
 from mode.rollout.rollout_video import RolloutVideo
 from typing import Any, Dict, Tuple, Union
 
