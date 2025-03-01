@@ -1,8 +1,14 @@
+from pathlib import Path
+import sys
 import threading
 from collections import OrderedDict
 import pickle
 import torch
-from PIL import Image
+
+sys.path.append(str(Path(__file__).absolute().parents[2]))
+from mode.models.perceptual_encoders.pretrained_resnets import FiLMLayer
+
+
 
 class AdvancedVisLangEmbeddingBuffers:
     def __init__(self, vision_encoder, language_encoder, vis_goal_buffer_size=1000, lang_goal_buffer_size=10000):
@@ -14,45 +20,45 @@ class AdvancedVisLangEmbeddingBuffers:
         self.lang_goal_buffer = OrderedDict()
         self.buffer_lock = threading.Lock()
 
+        self.goal_projection_layer = FiLMLayer(condition_dim=self.language_encoder.output_dim, num_features=512, dtype=torch.bfloat16)
+
     def get_or_encode_vis_lang_batch(self, images, texts):
         if isinstance(texts, str):
             texts = [texts]
-
+        
         try:
             with self.buffer_lock:
-                uncached_images = [image for image in images if image not in self.vis_goal_buffer]
+                uncached_images = [image for image in images if self._hash_tensor(image) not in self.vis_goal_buffer]
                 uncached_texts = [text for text in texts if text not in self.lang_goal_buffer]
             
             if uncached_images:
-                preprocessed_images = [self.preprocess_image(image) for image in uncached_images]
-                encoded_vis_batch = self.vision_encoder(preprocessed_images)
+                encoded_vis_batch = self.vision_encoder(uncached_images)
             
-                for image, embedding in zip(uncached_images, encoded_vis_batch):
-                    self.add_to_vis_buffer(image, embedding)
+                for uncached_image, embedding in zip(uncached_images, encoded_vis_batch):
+                    self.add_to_vis_buffer(self._hash_tensor(uncached_image), value=embedding)
 
             if uncached_texts:
                 encoded_lang_batch = self.language_encoder(uncached_texts)
                 
                 for text, embedding in zip(uncached_texts, encoded_lang_batch):
-                    self.add_to_lang_buffer(text, embedding)
+                    self.add_to_lang_buffer(key=text, value=embedding)
             
             with self.buffer_lock:
-                encoded_images = [self.vis_goal_buffer[image] for image in images]
-                encoded_texts = [self.lang_goal_buffer[text] for text in texts]
-            
-            encoded_goal = encoded_images + encoded_texts
-            return torch.stack(encoded_goal)
+                encoded_images = torch.stack([self.vis_goal_buffer[self._hash_tensor(image)] for image in images]).squeeze()
+                encoded_texts = torch.stack([self.lang_goal_buffer[text] for text in texts]).squeeze()
+
+            encoded_goal = self.goal_projection_layer(x=encoded_images, condition=encoded_texts, unsqueeze=False)
+            return encoded_goal
 
         except Exception as e:
             print(f"Error encoding images and texts: {e}")
             # If all else fails, return dummy tensors
             # Assuming the output dimensions of the vision and language encoders are known
-            return torch.stack(torch.zeros((len(images), self.vision_encoder.output_dim)), torch.zeros((len(texts), self.language_encoder.output_dim)))
-    
-    def preprocess_image(self, image_path):
-        image = Image.open(image_path).convert("RGB")
-        preprocessed_image = self.vision_encoder.preprocess_image(image)
-        return preprocessed_image
+            return torch.zeros((images.shape[0], self.vision_encoder.output_dim + self.language_encoder.output_dim))
+
+    def _hash_tensor(self, tensor):
+        # required to avoid using mutable tensors as keys in self.vis_goal_buffer
+        return hash(tensor.cpu().numpy().tobytes())
 
     def add_to_lang_buffer(self, key, value):
         with self.buffer_lock:

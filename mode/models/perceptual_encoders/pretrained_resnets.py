@@ -3,12 +3,12 @@ import torch.nn as nn
 from timm import create_model
 
 class FiLMLayer(nn.Module):
-    def __init__(self, num_features, condition_dim):
+    def __init__(self, num_features, condition_dim, dtype=None):
         super(FiLMLayer, self).__init__()
         self.num_features = num_features
         self.condition_dim = condition_dim
-        self.gamma = nn.Linear(condition_dim, num_features)
-        self.beta = nn.Linear(condition_dim, num_features)
+        self.gamma = nn.Linear(condition_dim, num_features, dtype=dtype)
+        self.beta = nn.Linear(condition_dim, num_features, dtype=dtype)
         
         # Zero initialization
         nn.init.zeros_(self.gamma.weight)
@@ -16,9 +16,17 @@ class FiLMLayer(nn.Module):
         nn.init.zeros_(self.beta.weight)
         nn.init.zeros_(self.beta.bias)
 
-    def forward(self, x, condition):
-        gamma = self.gamma(condition).unsqueeze(2).unsqueeze(3)
-        beta = self.beta(condition).unsqueeze(2).unsqueeze(3)
+    def forward(self, x, condition, unsqueeze=True):
+        self.gamma.to(condition.device)
+        self.beta.to(condition.device)
+
+        gamma = self.gamma(condition)
+        beta = self.beta(condition)
+
+        if unsqueeze:
+            gamma = gamma.unsqueeze(2).unsqueeze(3)
+            beta = beta.unsqueeze(2).unsqueeze(3)
+
         x = (1 + gamma) * x + beta  # Using (1 + gamma) to start with identity transform
         return x.contiguous()
 

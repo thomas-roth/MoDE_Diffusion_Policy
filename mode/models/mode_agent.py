@@ -863,6 +863,7 @@ class MoDEAgent(pl.LightningModule):
         self.static_resnet.to(dtype=self.dtype)
         self.gripper_resnet.to(dtype=self.dtype)
         # self.perceiver.to(dtype=self.dtype)
+        self.vision_goal.to(dtype=torch.float32)
         self.language_goal.to(dtype=torch.float32)
 
 @rank_zero_only
