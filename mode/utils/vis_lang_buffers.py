@@ -3,6 +3,7 @@ import sys
 import threading
 from collections import OrderedDict
 import pickle
+import pyhash
 import torch
 
 sys.path.append(str(Path(__file__).absolute().parents[2]))
@@ -20,7 +21,8 @@ class AdvancedVisLangEmbeddingBuffers:
         self.lang_goal_buffer = OrderedDict()
         self.buffer_lock = threading.Lock()
 
-        self.goal_projection_layer = FiLMLayer(condition_dim=self.language_encoder.output_dim, num_features=512, dtype=torch.bfloat16)
+        self.hasher = pyhash.fnv1a_64()
+        self.goal_projection_layer = FiLMLayer(condition_dim=self.language_encoder.output_dim, num_features=512)
 
     def get_or_encode_vis_lang_batch(self, images, texts):
         if isinstance(texts, str):
@@ -51,14 +53,20 @@ class AdvancedVisLangEmbeddingBuffers:
             return encoded_goal
 
         except Exception as e:
-            print(f"Error encoding images and texts: {e}")
-            # If all else fails, return dummy tensors
-            # Assuming the output dimensions of the vision and language encoders are known
-            return torch.zeros((images.shape[0], self.vision_encoder.output_dim + self.language_encoder.output_dim))
+            print(f"Error encoding images and texts: key {e} not found in buffer")
+
+            # If an error occurs, encode the batch from scratch
+            encoded_vis_batch = self.vision_encoder(images).squeeze()
+            encoded_lang_batch = self.language_encoder(texts).squeeze()
+
+            encoded_goal = self.goal_projection_layer(x=encoded_vis_batch, condition=encoded_lang_batch, unsqueeze=False)
+            return encoded_goal
 
     def _hash_tensor(self, tensor):
         # required to avoid using mutable tensors as keys in self.vis_goal_buffer
-        return hash(tensor.cpu().numpy().tobytes())
+        # FIXME: in some cases keys not found in buffer => change hasher?
+        tensor_bytes = tensor.detach().cpu().numpy().tobytes()
+        return self.hasher(tensor_bytes)
 
     def add_to_lang_buffer(self, key, value):
         with self.buffer_lock:

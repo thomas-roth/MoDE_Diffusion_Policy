@@ -3,12 +3,12 @@ import torch.nn as nn
 from timm import create_model
 
 class FiLMLayer(nn.Module):
-    def __init__(self, num_features, condition_dim, dtype=None):
+    def __init__(self, num_features, condition_dim):
         super(FiLMLayer, self).__init__()
         self.num_features = num_features
         self.condition_dim = condition_dim
-        self.gamma = nn.Linear(condition_dim, num_features, dtype=dtype)
-        self.beta = nn.Linear(condition_dim, num_features, dtype=dtype)
+        self.gamma = nn.Linear(condition_dim, num_features)
+        self.beta = nn.Linear(condition_dim, num_features)
         
         # Zero initialization
         nn.init.zeros_(self.gamma.weight)
@@ -19,6 +19,8 @@ class FiLMLayer(nn.Module):
     def forward(self, x, condition, unsqueeze=True):
         self.gamma.to(condition.device)
         self.beta.to(condition.device)
+        self.gamma.to(condition.dtype)
+        self.beta.to(condition.dtype)
 
         gamma = self.gamma(condition)
         beta = self.beta(condition)
