@@ -53,7 +53,7 @@ class AdvancedVisLangEmbeddingBuffers:
             return encoded_goal
 
         except Exception as e:
-            print(f"Error encoding images and texts: key {e} not found in buffer")
+            print(f"Error encoding images and texts: key {e} not found in buffer. Encoding from scratch.")
 
             # If an error occurs, encode the batch from scratch
             encoded_vis_batch = self.vision_encoder(images).squeeze()
@@ -64,7 +64,7 @@ class AdvancedVisLangEmbeddingBuffers:
 
     def _hash_tensor(self, tensor):
         # required to avoid using mutable tensors as keys in self.vis_goal_buffer
-        # FIXME: in some cases keys not found in buffer => change hasher?
+        # FIXME: in some cases keys not found in buffer => change hasher? change whole approach of transforming images into immutable representations?
         tensor_bytes = tensor.detach().cpu().numpy().tobytes()
         return self.hasher(tensor_bytes)
 
