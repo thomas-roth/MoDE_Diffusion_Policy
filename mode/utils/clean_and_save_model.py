@@ -43,9 +43,7 @@ def clean_and_save_model(seed: str):
     cleaned_state_dict = {k.replace('model.', ''): v for k, v in state_dict.items()}
     
     print("Saving model checkpoint...")
-    save_path = model_path / "cleaned"
-    os.makedirs(save_path)
-    save_file(cleaned_state_dict, os.path.join(save_path, "model_cleaned.safetensors"))
+    save_file(cleaned_state_dict, os.path.join(model_path, "model_cleaned.safetensors"))
 
 
 if __name__ == "__main__":
