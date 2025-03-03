@@ -23,7 +23,7 @@ class VisClip(nn.Module):
         self.output_dim = self.clip_vit.visual.output_dim
 
     def forward(self, images: List[torch.Tensor]) -> torch.Tensor:
-        images = [Image.fromarray(image.cpu().numpy()).convert("RGB") for image in images]
+        images = [Image.fromarray(image.to(torch.uint8).cpu().numpy()).convert("RGB") for image in images]
         with torch.no_grad():
             preprocessed_images = []
             for image in images:

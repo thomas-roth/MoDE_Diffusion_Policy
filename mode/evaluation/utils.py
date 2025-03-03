@@ -155,13 +155,13 @@ def get_default_model_and_env(train_folder, dataset_path, checkpoint, env=None, 
     return model, env, data_module, lang_embeddings
 
 
-def get_default_mode_and_env(train_folder, dataset_path, checkpoint, env=None, lang_embeddings=None, prep_dm_and_deps=True, device_id=0, eval_cfg_overwrite={}):
+def get_default_mode_and_env(train_folder, dataset_path, checkpoint, env=None, vis_lang_embeddings=None, prep_dm_and_deps=True, device_id=0, eval_cfg_overwrite={}):
     train_cfg_path = Path(train_folder) / checkpoint / ".hydra/config.yaml"
     train_cfg_path = format_sftp_path(train_cfg_path)
     def_cfg = OmegaConf.load(train_cfg_path)
     eval_override_cfg = OmegaConf.create(eval_cfg_overwrite)
     cfg = OmegaConf.merge(def_cfg, eval_override_cfg)
-    lang_folder = cfg.datamodule.datasets.lang_dataset.lang_folder
+    vis_lang_folder = cfg.datamodule.datasets.vis_lang_dataset.vis_lang_folder
     if not hydra.core.global_hydra.GlobalHydra.instance().is_initialized():
         hydra.initialize("../../conf/datamodule/datasets")
     # we don't want to use shm dataset for evaluation
@@ -179,10 +179,10 @@ def get_default_mode_and_env(train_folder, dataset_path, checkpoint, env=None, l
         data_module.prepare_data()
         data_module.setup()
         dataloader = data_module.val_dataloader()
-        dataset = dataloader["lang"].dataset
+        dataset = dataloader["vis_lang"].dataset
 
-        if lang_embeddings is None:
-            lang_embeddings = VisLangEmbeddings(dataset.abs_datasets_dir, lang_folder, device=device)
+        if vis_lang_embeddings is None:
+            vis_lang_embeddings = VisLangEmbeddings(dataset.abs_datasets_dir, vis_lang_folder, device=device)
 
         if env is None:
             rollout_cfg = OmegaConf.load(Path(__file__).parents[2] / "conf/callbacks/rollout_lh/calvin.yaml")
@@ -202,7 +202,7 @@ def get_default_mode_and_env(train_folder, dataset_path, checkpoint, env=None, l
     model = model.cuda(device)
     print("Successfully loaded model.")
 
-    return model, env, data_module, lang_embeddings
+    return model, env, data_module, vis_lang_embeddings
 
 def load_mode_from_safetensor(
     filedir: Path,
@@ -247,14 +247,14 @@ def join_vis_lang(img, lang_text):
 
 class VisLangEmbeddings:
     def __init__(self, val_dataset_path, vis_lang_folder, device=torch.device("cuda:0")):
-        embeddings = np.load(Path(val_dataset_path) / vis_lang_folder / "validation" / "embeddings.npy", allow_pickle=True).item()
-        # we want to get the embedding for full sentence, not just a task name
-        self.vis_lang_embeddings = {task_data["lang_ann"][0]: {"vis": task_data["vis_emb"], "lang": task_data["lang_emb"]} for task, task_data in embeddings.items()}
+        self.vis_lang_embeddings = np.load(Path(val_dataset_path) / vis_lang_folder / "validation" / "embeddings.npy", allow_pickle=True).item()
         self.device = device
 
     def get_vis_lang_goal(self, task):
-        return {"vis": torch.from_numpy(self.vis_lang_embeddings[task]["vis"]).to(self.device).squeeze(0).float(),
-                "lang": torch.from_numpy(self.vis_lang_embeddings[task]["lang"]).to(self.device).squeeze(0).float()}
+        return {"vis_ann": torch.from_numpy(self.vis_lang_embeddings[task]["vis_ann"][0]).to(self.device).squeeze(0).float(),
+                "lang_ann": self.vis_lang_embeddings[task]["lang_ann"],
+                "vis": torch.from_numpy(self.vis_lang_embeddings[task]["vis_emb"]).to(self.device).squeeze(0).float(),
+                "lang": torch.from_numpy(self.vis_lang_embeddings[task]["lang_emb"]).to(self.device).squeeze(0).float()}
 
 
 def imshow_tensor(window, img_tensor, wait=0, resize=True, keypoints=None, text=None):

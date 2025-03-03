@@ -3,16 +3,11 @@ defaults:
   - callbacks/rollout_lh/tasks@tasks: new_playtable_tasks
 
 eval_cfg_overwrite:
-  datamodule:
-    datasets:
-      lang_dataset:
-        lang_folder: lang_annotations
-        use_extracted_rel_actions: false
   model:
     num_sampling_steps: 5
 
 train_folder: /home/troth/bt/bt-trajectory-planning/models/MoDE_Diffusion_Policy/pretrained/MoDE_CALVIN_D
-checkpoint: d_ema=0
+checkpoint: first_successful_training #d_ema=0
 device: 0
 
 

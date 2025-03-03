@@ -27,6 +27,7 @@ class AdvancedVisLangEmbeddingBuffers:
     def get_or_encode_vis_lang_batch(self, images, texts):
         if isinstance(texts, str):
             texts = [texts]
+            images = [images]
         
         try:
             with self.buffer_lock:
@@ -46,8 +47,8 @@ class AdvancedVisLangEmbeddingBuffers:
                     self.add_to_lang_buffer(key=text, value=embedding)
             
             with self.buffer_lock:
-                encoded_images = torch.stack([self.vis_goal_buffer[self._hash_tensor(image)] for image in images]).squeeze()
-                encoded_texts = torch.stack([self.lang_goal_buffer[text] for text in texts]).squeeze()
+                encoded_images = torch.stack([self.vis_goal_buffer[self._hash_tensor(image)] for image in images]).squeeze(1)
+                encoded_texts = torch.stack([self.lang_goal_buffer[text] for text in texts]).squeeze(1)
 
             encoded_goal = self.goal_projection_layer(x=encoded_images, condition=encoded_texts, unsqueeze=False)
             return encoded_goal
