@@ -6,6 +6,7 @@ import importlib
 
 import cv2
 import hydra
+from matplotlib import pyplot as plt
 import numpy as np
 from omegaconf import OmegaConf
 import pyhash
@@ -241,8 +242,10 @@ def join_vis_lang(img, lang_text):
     img = img[:, :, ::-1].copy()
     img = cv2.resize(img, (500, 500))
     add_text(img, lang_text)
-    cv2.imshow("simulation cam", img)
-    cv2.waitKey(1)
+    plt.imshow(img)
+    plt.title("simulation cam")
+    plt.axis("off")
+    plt.show()
 
 
 class VisLangEmbeddings:
@@ -257,6 +260,7 @@ class VisLangEmbeddings:
                 "lang": torch.from_numpy(self.vis_lang_embeddings[task]["lang_emb"]).to(self.device).squeeze(0).float()}
 
 
+"""
 def imshow_tensor(window, img_tensor, wait=0, resize=True, keypoints=None, text=None):
     img_tensor = img_tensor.squeeze()
     img = np.transpose(img_tensor.cpu().numpy(), (1, 2, 0))
@@ -276,6 +280,7 @@ def imshow_tensor(window, img_tensor, wait=0, resize=True, keypoints=None, text=
     else:
         cv2.imshow(window, img[:, :, ::-1])
     cv2.waitKey(wait)
+"""
 
 
 def print_task_log(demo_task_counter, live_task_counter, mod):

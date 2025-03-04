@@ -37,14 +37,14 @@ class AdvancedVisLangEmbeddingBuffers:
             if uncached_images:
                 encoded_vis_batch = self.vision_encoder(uncached_images)
             
-                for uncached_image, embedding in zip(uncached_images, encoded_vis_batch):
-                    self.add_to_vis_buffer(self._hash_tensor(uncached_image), value=embedding)
+                for uncached_image, encoded_image in zip(uncached_images, encoded_vis_batch):
+                    self.add_to_vis_buffer(key=self._hash_tensor(uncached_image), value=encoded_image)
 
             if uncached_texts:
                 encoded_lang_batch = self.language_encoder(uncached_texts)
                 
-                for text, embedding in zip(uncached_texts, encoded_lang_batch):
-                    self.add_to_lang_buffer(key=text, value=embedding)
+                for uncached_text, encoded_text in zip(uncached_texts, encoded_lang_batch):
+                    self.add_to_lang_buffer(key=uncached_text, value=encoded_text)
             
             with self.buffer_lock:
                 encoded_images = torch.stack([self.vis_goal_buffer[self._hash_tensor(image)] for image in images]).squeeze(1)

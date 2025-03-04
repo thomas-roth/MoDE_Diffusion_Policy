@@ -66,7 +66,7 @@ def print_and_save(total_results, plan_dicts, cfg, log_dir=None):
     ranking = {}
     for checkpoint, results in total_results.items():
         epoch = checkpoint.stem.split("=")[1]
-        print(f"Results for Epoch {epoch}:")
+        print(f"\nResults for Epoch {epoch}:")
         avg_seq_len = np.mean(results)
         ranking[epoch] = avg_seq_len
         chain_sr = {i + 1: sr for i, sr in enumerate(count_success(results))}
@@ -283,7 +283,6 @@ if __name__ == "__main__":
     os.environ["PL_TORCH_DISTRIBUTED_BACKEND"] = "gloo"
     # Set CUDA device IDs
     os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
-    os.environ["CUDA_VISIBLE_DEVICES"] = "3"
 
     sys.path.append(str(Path(__file__).absolute().parents[2] / "calvin_env"))
     

@@ -7,7 +7,7 @@ eval_cfg_overwrite:
     num_sampling_steps: 5
 
 train_folder: /home/troth/bt/bt-trajectory-planning/models/MoDE_Diffusion_Policy/pretrained/MoDE_CALVIN_D
-checkpoint: first_successful_training #d_ema=0
+checkpoint: first_successful_training=04_eval_lh #d_ema=0
 device: 0
 
 

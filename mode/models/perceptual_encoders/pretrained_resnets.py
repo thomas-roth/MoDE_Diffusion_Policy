@@ -47,6 +47,9 @@ class FiLMResNet50Policy(nn.Module):
     def forward(self, x, condition):
         if len(condition.shape) == 3:
             condition = condition.squeeze(1)
+
+        x = x.to(self.resnet.conv1.weight.dtype)
+
         x = self.resnet.conv1(x)
         x = self.resnet.bn1(x)
         x = self.resnet.act1(x)
