@@ -26,5 +26,5 @@ sigma_min: 1.0
 sigma_max: null
 noise_scheduler: null
 
-num_sequences: 5 #1000
+num_sequences: 25 #1000
 ep_len: 360
