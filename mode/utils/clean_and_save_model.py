@@ -25,7 +25,7 @@ def _get_checkpoint_path(model_path: Path) -> str:
 
 
 def clean_and_save_model(seed: str):
-    logs_path = Path(__file__).absolute().parents[4] / "logs" / "runs"
+    logs_path = Path(__file__).absolute().parents[5] / "logs" / "runs"
     last_run_id = _get_last_run_id(logs_path)
     model_path = logs_path / last_run_id / f"seed_{seed}" / "saved_models" / "epoch=04_eval_lh"
 

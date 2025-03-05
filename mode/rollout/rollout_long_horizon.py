@@ -299,7 +299,8 @@ class RolloutLongHorizon(Callback):
         lang_annotation = self.val_annotations[subtask][0]
         # get vision-language goal embedding
         goal = self.vis_lang_embeddings.get_vis_lang_goal(subtask)
-        goal['lang_text'] = lang_annotation # FIXME?: "vis_image" key missing? (not required if model.use_image_text_not_embedding == False)
+        goal["vis_image"] = goal["vis_ann"]
+        goal["lang_text"] = lang_annotation
         model.reset()
         start_info = self.env.get_info()
         success = False
