@@ -13,7 +13,7 @@ sigma_min: 0.001
 sigma_max: 80
 noise_scheduler: 'exponential'
 sigma_sample_density_type: 'loglogistic' # 'loglogistic' or 'loguniform'
-ckpt_path: '/home/troth/bt/bt-trajectory-planning/iTRAP/models/MoDE_Diffusion_Policy/pretrained/MoDE_CALVIN_D/d_ema=0'
+ckpt_path: '/home/troth/bt/iTRAP/iTRAP/models/MoDE_Diffusion_Policy/pretrained/MoDE_CALVIN_D/d_ema=0'
 start_from_pretrained: True
 act_window_size: ${act_seq_len}
 latent_dim: 1024

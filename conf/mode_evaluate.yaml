@@ -6,12 +6,12 @@ eval_cfg_overwrite:
   model:
     num_sampling_steps: 5
 
-train_folder: /home/troth/bt/bt-trajectory-planning/iTRAP/models/MoDE_Diffusion_Policy/pretrained/MoDE_CALVIN_D
+train_folder: /home/troth/bt/iTRAP/iTRAP/models/MoDE_Diffusion_Policy/pretrained/MoDE_CALVIN_D
 checkpoint: first_successful_training_epoch=04_eval_lh #d_ema=0
 device: 0
 
 
-log_dir: /home/troth/bt/bt-trajectory-planning/iTRAP/models/MoDE_Diffusion_Policy/outputs/d_ema
+log_dir: /home/troth/bt/iTRAP/iTRAP/models/MoDE_Diffusion_Policy/outputs/d_ema
 dataset_path: /DATA/calvin/task_D_D
 num_videos: 30
 debug: True
