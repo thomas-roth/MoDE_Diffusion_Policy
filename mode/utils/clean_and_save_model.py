@@ -28,7 +28,7 @@ def _get_checkpoint_path(model_path: Path) -> str:
     
     checkpoints_with_scores = []
     for checkpoint_file in checkpoint_files:
-        score = float(checkpoint_file.stem.split("_")[-1])
+        score = float(checkpoint_file.stem.split("=")[-1])
         checkpoints_with_scores.append((score, checkpoint_file))
     
     checkpoints_with_scores.sort(reverse=True)
