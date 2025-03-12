@@ -682,7 +682,7 @@ class MoDeDiT(nn.Module):
         seq_size = goal_seq_len + obs_seq_len - 1 + action_seq_len
         self.tok_emb = nn.Linear(obs_dim, embed_dim, bias=False)
         self.gripper_embed = nn.Linear(obs_dim, embed_dim, bias=False)
-        self.goal_emb = nn.Linear(goal_dim, embed_dim, bias=False, dtype=torch.bfloat16)
+        self.goal_emb = nn.Linear(goal_dim, embed_dim, bias=False)
         self.action_emb = nn.Linear(action_dim, embed_dim, bias=False)
         self.pos_emb = nn.Parameter(torch.zeros(1, seq_size, embed_dim))
         self.drop = nn.Dropout(embed_pdrob)
@@ -753,7 +753,7 @@ class MoDeDiT(nn.Module):
         # Reshape goals if necessary
         goals = self.preprocess_goals(goals, 1, uncond=uncond)
 
-        goals = goals.bfloat16()
+        goals = goals.to(self.goal_emb.weight.dtype)
 
         # embed them into linear representations for the transformer
         if len(goals.shape) == 2:
