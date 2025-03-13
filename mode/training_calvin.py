@@ -147,7 +147,7 @@ def train(cfg: DictConfig) -> None:
         clear_cuda_cache()
         # Clean up
         cleanup_distributed()
-        clean_and_save_model(cfg.seed, logger)
+        clean_and_save_model(logger)
         if wandb.run is not None:
             wandb.finish()
 

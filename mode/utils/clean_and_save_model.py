@@ -1,3 +1,4 @@
+import logging
 import os
 from pathlib import Path
 import torch
@@ -5,19 +6,25 @@ from safetensors.torch import save_file
 
 
 
-def _get_last_run_id(logs_path: Path) -> str:
-    # Get latest run directory
-    all_days = [dir for dir in logs_path.iterdir() if dir.is_dir()]
-    all_days.sort(key=lambda dir: dir.stat().st_ctime, reverse=True)
+def _get_latest_model_path(logs_path: Path) -> str:
+    # Get latest model of latest run directory
+    all_days_path = [dir for dir in logs_path.iterdir() if dir.is_dir()]
+    all_days_path.sort(key=lambda dir: dir.stat().st_ctime, reverse=True)
 
-    if len(all_days) == 0:
+    if len(all_days_path) == 0:
         return None
     else:
-        last_day = all_days[0]
-        all_runs_last_day = [dir for dir in last_day.iterdir() if dir.is_dir()]
-        all_runs_last_day.sort(key=lambda dir: dir.stat().st_ctime, reverse=True)
-        last_run_last_day = all_runs_last_day[0]
-        return last_run_last_day
+        last_day_path = all_days_path[0]
+        all_runs_last_day_path = [dir for dir in last_day_path.iterdir() if dir.is_dir()]
+        all_runs_last_day_path.sort()
+        last_run_last_day_path = all_runs_last_day_path[-1]
+        
+        seed = last_run_last_day_path.name.split("d")[-1]
+        models_last_run_last_day_path = Path(last_run_last_day_path / f"seed_{seed}" / "saved_models")
+        models_last_run_last_day_path = [dir for dir in models_last_run_last_day_path.iterdir() if dir.is_dir()]
+        models_last_run_last_day_path.sort()
+        latest_model_path = models_last_run_last_day_path[-1]
+        return latest_model_path
 
 
 def _get_checkpoint_path(model_path: Path) -> str:
@@ -35,15 +42,13 @@ def _get_checkpoint_path(model_path: Path) -> str:
     return checkpoints_with_scores[0][1]
 
 
-def clean_and_save_model(seed: str, logger):
+def clean_and_save_model(logger):
     logs_path = Path(__file__).absolute().parents[5] / "logs" / "runs"
-    last_run_id = _get_last_run_id(logs_path)
+    model_path = _get_latest_model_path(logs_path)
 
-    if last_run_id is None:
-        logger.info("No run found. Aborting.")
+    if model_path is None:
+        logger.info("No saved model found. Aborting.")
         return
-
-    model_path = logs_path / last_run_id / f"seed_{seed}" / "saved_models" / "epoch=04_eval_lh"
 
     logger.info("Loading model checkpoint...")
     model_checkpoint_path = _get_checkpoint_path(model_path)
@@ -63,4 +68,5 @@ def clean_and_save_model(seed: str, logger):
 
 
 if __name__ == "__main__":
-    clean_and_save_model(seed=242)
+    logger = logging.getLogger(__name__)
+    clean_and_save_model(logger)
