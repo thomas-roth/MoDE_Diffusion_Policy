@@ -27,7 +27,7 @@ multistep: 10 #${act_seq_len}
 p_last_state: 0
 gen_img_res: 112
 max_epochs: 20
-rollout_lh_skip_epochs: 7
+rollout_lh_skip_epochs: 9
 num_workers: 12
 benchmark_name: mode_calvin_d
 use_extracted_rel_actions: false

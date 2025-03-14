@@ -21,6 +21,10 @@ def _get_latest_model_path(logs_path: Path) -> str:
         
         seed = last_run_last_day_path.name.split("d")[-1]
         models_last_run_last_day_path = Path(last_run_last_day_path / f"seed_{seed}" / "saved_models")
+
+        if not models_last_run_last_day_path.exists():
+            return None
+        
         models_last_run_last_day_path = [dir for dir in models_last_run_last_day_path.iterdir() if dir.is_dir()]
         models_last_run_last_day_path.sort()
         latest_model_path = models_last_run_last_day_path[-1]
