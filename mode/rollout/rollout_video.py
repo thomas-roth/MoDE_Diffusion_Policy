@@ -22,6 +22,7 @@ flatten_list_of_dicts = lambda t: {k: v for d in t for k, v in d.items()}
 
 
 def _unnormalize(img):
+    # re-normalize from [-1, 1] to [0, 1]
     return img / 2 + 0.5
 
 
