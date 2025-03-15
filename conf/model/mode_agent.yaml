@@ -80,8 +80,3 @@ language_goal:
   _target_:  mode.models.networks.clip_lang_encoder.LangClip
   _recursive_: false
   model_name: ${clip_lang_model_name}
-
-vision_goal:
-  _target_: mode.models.networks.clip_vis_encoder.VisClip
-  _recursive_: false
-  model_name: ${clip_vis_model_name}

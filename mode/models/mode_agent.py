@@ -19,7 +19,7 @@ from mode.callbacks.ema import EMA
 from mode.models.perceptual_encoders.resnets import ResNetEncoderWithFiLM
 from mode.models.perceptual_encoders.pretrained_resnets import FiLMResNet34Policy, FiLMResNet50Policy
 from mode.models.networks.modedit import NoiseBlockMoE 
-from mode.utils.vis_lang_buffer import AdvancedVisLangEmbeddingBuffer
+from mode.utils.lang_buffer import AdvancedLangEmbeddingBuffer
 
 
 logger = logging.getLogger(__name__)
@@ -43,7 +43,6 @@ class MoDEAgent(pl.LightningModule):
     """
     def __init__(
         self,
-        vision_goal: DictConfig,
         language_goal: DictConfig,
         model: DictConfig,
         optimizer: DictConfig,
@@ -98,7 +97,6 @@ class MoDEAgent(pl.LightningModule):
         self.use_proprio = use_proprio
         # goal encoders
         self.language_goal = hydra.utils.instantiate(language_goal) if language_goal else None
-        self.vision_goal = hydra.utils.instantiate(vision_goal) if vision_goal else None
         self.modality_scope = "vis_lang"
         self.optimizer_config = optimizer
         self.lr_scheduler = lr_scheduler
@@ -130,7 +128,7 @@ class MoDEAgent(pl.LightningModule):
 
         self.need_precompute_experts_for_inference = False
 
-        self.vis_lang_buffers = AdvancedVisLangEmbeddingBuffer(self.vision_goal, self.language_goal)
+        self.lang_buffer = AdvancedLangEmbeddingBuffer(self.language_goal)
 
     def load_pretrained_parameters(self, ckpt_path, strict: bool = False):
         """
@@ -530,13 +528,13 @@ class MoDEAgent(pl.LightningModule):
         # 1. extract the revelant visual observations
         latent_goal = None
         # last images are the randomly sampled future goal images for models learned with image goals 
-        rgb_static = dataset_batch["rgb_obs"]['rgb_static'] # [:, :-1]
+        rgb_static = dataset_batch["vis_image"] # [:, :-1]
         rgb_gripper = dataset_batch["rgb_obs"]['rgb_gripper'] # [:, :-1]
 
         if self.use_image_text_not_embedding:
-            latent_goal = self.vis_lang_buffers.get_vis_lang_goal_embeddings(dataset_batch["vis_image"], dataset_batch["lang_text"]).to(rgb_static.dtype)
+            latent_goal = self.lang_buffer.get_goal_instruction_embeddings(dataset_batch["lang_text"]).to(rgb_static.dtype)
         else:
-            latent_goal = torch.cat(self.vision_goal(dataset_batch["vis"]), self.language_goal(dataset_batch["lang"])).to(rgb_static.dtype)
+            latent_goal = self.language_goal(dataset_batch["lang"]).to(rgb_static.dtype)
 
         perceptual_emb = self.embed_visual_obs(rgb_static, rgb_gripper, latent_goal)
 
@@ -580,23 +578,19 @@ class MoDEAgent(pl.LightningModule):
         """
         self.latent_goal = None
         self.rollout_step_counter = 0
-    
-    def forward(self, obs, goal):
+
+    def forward(self, rgb_static, rgb_gripper, goal):
         """
         Method for doing inference with the model.
         """
         if self.use_image_text_not_embedding:
-            latent_goal = self.vis_lang_buffers.get_vis_lang_goal_embedding(goal["vis_image"], goal["lang_text"]).to(torch.float32)
+            latent_goal = self.lang_buffer.get_goal_instruction_embedding(goal["lang_text"]).to(torch.float32)
         else:
-            latent_goal = torch.cat(self.vision_goal(goal["vis"]), self.language_goal(goal["lang"])).unsqueeze(0).to(torch.float32).to(obs["rgb_obs"]['rgb_static'].device)
+            latent_goal = self.language_goal(goal["lang"]).unsqueeze(0).to(torch.float32).to(rgb_static.device)
         if self.need_precompute_experts_for_inference:
             self.precompute_expert_for_inference(latent_goal)
             self.need_precompute_experts_for_inference = False
         
-
-        rgb_static = obs["rgb_obs"]['rgb_static']
-        rgb_gripper = obs["rgb_obs"]['rgb_gripper']
-
         perceptual_emb = self.embed_visual_obs(rgb_static, rgb_gripper, latent_goal)
         
         act_seq = self.denoise_actions(
@@ -863,7 +857,6 @@ class MoDEAgent(pl.LightningModule):
         self.static_resnet.to(dtype=self.dtype)
         self.gripper_resnet.to(dtype=self.dtype)
         # self.perceiver.to(dtype=self.dtype)
-        self.vision_goal.to(dtype=torch.float32)
         self.language_goal.to(dtype=torch.float32)
 
 @rank_zero_only

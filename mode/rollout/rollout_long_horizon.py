@@ -13,8 +13,9 @@ import torch
 import torch.distributed as dist
 from tqdm import tqdm
 
+from iTRAP.evaluation.itrap_evaluate import setup_vlm_server, query_vlm, build_trajectory_image
 from mode.evaluation.multistep_sequences import get_sequences
-from mode.evaluation.utils import get_env_state_for_initial_condition, join_vis_lang, VisLangEmbeddings
+from mode.evaluation.utils import get_env_state_for_initial_condition, join_vis_lang, LangEmbeddings
 from mode.rollout.rollout_video import RolloutVideo
 from mode.models.mode_agent import MoDEAgent
 
@@ -133,7 +134,7 @@ class RolloutLongHorizon(Callback):
         self.rollout_video = None  # type: Any
         self.empty_cache = empty_cache
         self.device = None  # type: Any
-        self.vis_lang_embeddings = None
+        self.lang_embeddings = None
         self.vis_lang_folder = vis_lang_folder
         self.eval_sequences = None
         self.val_annotations = val_annotations
@@ -185,7 +186,7 @@ class RolloutLongHorizon(Callback):
                     )
 
                 # Initialize language embeddings with the dataset
-                self.vis_lang_embeddings = VisLangEmbeddings(
+                self.lang_embeddings = LangEmbeddings(
                     dataset.abs_datasets_dir, 
                     dataset.vis_lang_folder, 
                     device=pl_module.device
@@ -253,6 +254,10 @@ class RolloutLongHorizon(Callback):
         )
 
     def evaluate_policy(self, model):
+        os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+        vlm_client = setup_vlm_server()
+        os.environ["CUDA_VISIBLE_DEVICES"] = "1,2,3"
+
         results = []
         total_evaluations = len(self.eval_sequences)
         local_rank = int(dist.get_rank()) if (dist.is_available() and dist.is_initialized()) else 0
@@ -261,13 +266,13 @@ class RolloutLongHorizon(Callback):
                      desc=f"Evaluating Policy(rank={local_rank})",
                      total=total_evaluations, position=local_rank)):
             record = i < self.num_videos
-            result = self.evaluate_sequence(model, initial_state, eval_sequence, record, i)
+            result = self.evaluate_sequence(vlm_client, model, initial_state, eval_sequence, record, i)
             results.append(result)
             if record:
                 self.rollout_video.write_to_tmp()
         return results
 
-    def evaluate_sequence(self, model, initial_state, eval_sequence, record, i):
+    def evaluate_sequence(self, vlm_client, model, initial_state, eval_sequence, record, i):
         robot_obs, scene_obs = get_env_state_for_initial_condition(initial_state)
         self.env.reset(robot_obs=robot_obs, scene_obs=scene_obs)
         if record:
@@ -282,7 +287,7 @@ class RolloutLongHorizon(Callback):
         for subtask in eval_sequence:
             if record:
                 self.rollout_video.new_subtask()
-            success = self.rollout(model, subtask, record)
+            success = self.rollout(vlm_client, model, subtask, record)
             if record:
                 self.rollout_video.draw_outcome(success)
             if success:
@@ -291,21 +296,22 @@ class RolloutLongHorizon(Callback):
                 return success_counter
         return success_counter
 
-    def rollout(self, model, subtask, record):
+    def rollout(self, vlm_client, model, subtask, record):
         if self.debug:
             print(f"{subtask} ", end="")
         obs = self.env.get_obs()
         # get lang annotation for subtask
         lang_annotation = self.val_annotations[subtask][0]
-        # get vision-language goal embedding
-        goal = self.vis_lang_embeddings.get_vis_lang_goal(subtask)
-        goal["vis_image"] = goal["vis_ann"]
+        # get lang goal embedding
+        goal = self.lang_embeddings.get_lang_goal(subtask)
         goal["lang_text"] = lang_annotation
         model.reset()
         start_info = self.env.get_info()
         success = False
         for step in range(self.ep_len):
-            action = model.step(obs, goal)
+            response = query_vlm(self.env, vlm_client, subtask)
+            static_traj_img = build_trajectory_image(self.env, response, save_traj_imgs=False)
+            action = model.step(static_traj_img, obs["rgb_obs"]["rgb_gripper"], goal)
             # print(action.shape)
             obs, _, _, current_info = self.env.step(action)
             if self.debug and os.environ.get("DISPLAY") is not None:
