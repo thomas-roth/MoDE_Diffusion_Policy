@@ -21,13 +21,8 @@ class AdvancedVisLangEmbeddingBuffer:
         self.buffer_lock = threading.Lock()
         self.logger = logging.getLogger(__name__)
 
-        self.goal_projection_layer = FiLMLayer(condition_dim=self.language_encoder.output_dim, num_features=512)
-
 
     def get_or_encode_vis_lang_batch(self, images: torch.Tensor, texts: list):
-        if len(images.shape) == 3:
-            images = images.unsqueeze(0)
-
         try:
             with self.buffer_lock:
                 uncached_texts = [text for text in texts if text not in self.lang_goal_buffer]
@@ -47,10 +42,7 @@ class AdvancedVisLangEmbeddingBuffer:
             # If an error occurs, encode text batch from scratch
             encoded_texts = self.language_encoder(texts).squeeze(1)
 
-        encoded_vis_batch = self.vision_encoder(images).squeeze(1)
-
-        encoded_goal = self.goal_projection_layer(x=encoded_vis_batch, condition=encoded_texts, unsqueeze=False)
-        return encoded_goal
+        return encoded_texts
 
 
     def add_to_lang_buffer(self, key, value):
