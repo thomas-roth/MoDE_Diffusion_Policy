@@ -27,19 +27,19 @@ multistep: 10 #${act_seq_len}
 p_last_state: 0
 gen_img_res: 112
 max_epochs: 20
-rollout_lh_skip_epochs: 9
+rollout_lh_skip_epochs: 1 #9 # TODO: change back after debugging
 num_workers: 12
 benchmark_name: mode_calvin_d
 use_extracted_rel_actions: false
 
 trainer:
-  devices: ${devices}
+  devices: 1 #3 # ${devices} # TODO: change back after debugging
   precision: bf16
   max_epochs: ${max_epochs}
   sync_batchnorm: True
   accelerator: gpu
   strategy: "ddp" 
-  limit_train_batches: 1000
+  limit_train_batches: 10 #00 # TODO: change back after debugging
   limit_val_batches: 4
 
 
