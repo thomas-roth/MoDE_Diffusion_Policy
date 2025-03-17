@@ -259,7 +259,7 @@ class RolloutLongHorizon(Callback):
     def evaluate_policy(self, model):
         os.environ["CUDA_VISIBLE_DEVICES"] = "0"
         vlm_client = setup_vlm_server()
-        os.environ["CUDA_VISIBLE_DEVICES"] = "1" #"1,2,3" # TODO: change back after debugging
+        os.environ["CUDA_VISIBLE_DEVICES"] = "1, 2" #"1,2,3" # TODO: change back after debugging
 
         results = []
         total_evaluations = len(self.eval_sequences)
