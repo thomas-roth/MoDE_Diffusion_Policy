@@ -16,7 +16,7 @@ import torch.distributed as dist
 from tqdm import tqdm
 
 sys.path.append(str(Path(__file__).parents[5]))
-from iTRAP.evaluation.itrap_evaluate import setup_vlm_server, query_vlm, build_trajectory_image
+from iTRAP.evaluation.itrap_evaluate import setup_vlm_client, query_vlm, build_trajectory_image
 from mode.evaluation.multistep_sequences import get_sequences
 from mode.evaluation.utils import get_env_state_for_initial_condition, join_vis_lang, LangEmbeddings
 from mode.rollout.rollout_video import RolloutVideo
@@ -257,16 +257,14 @@ class RolloutLongHorizon(Callback):
         )
 
     def evaluate_policy(self, model):
-        os.environ["CUDA_VISIBLE_DEVICES"] = "0"
-        vlm_client = setup_vlm_server()
-        os.environ["CUDA_VISIBLE_DEVICES"] = "1, 2" #"1,2,3" # TODO: change back after debugging
+        vlm_client = setup_vlm_client()
 
         results = []
         total_evaluations = len(self.eval_sequences)
         local_rank = int(dist.get_rank()) if (dist.is_available() and dist.is_initialized()) else 0
         for i, (initial_state, eval_sequence) in enumerate(
                 tqdm(self.eval_sequences,
-                     desc=f"Evaluating Policy(rank={local_rank})",
+                     desc=f"Evaluating Policy (rank={local_rank})",
                      total=total_evaluations, position=local_rank)):
             record = i < self.num_videos
             result = self.evaluate_sequence(vlm_client, model, initial_state, eval_sequence, record, i, local_rank)
@@ -311,19 +309,12 @@ class RolloutLongHorizon(Callback):
         model.reset()
         start_info = self.env.get_info()
 
-        # TODO: remove after debugging
-        logger = logging.getLogger(__name__)
-        logger.setLevel(logging.DEBUG)
-        handler = logging.StreamHandler()
-        handler.setLevel(logging.DEBUG)
-        formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
-        handler.setFormatter(formatter)
-        logger.addHandler(handler)
-
         success = False
-        for step in range(self.ep_len):
-            response = query_vlm(self.env, vlm_client, subtask, local_rank, logger)
-            static_traj_img = build_trajectory_image(self.env, response, save_traj_imgs=False)
+        for step in tqdm(range(self.ep_len), total=self.ep_len, desc=f"Rollout for {subtask} (rank={local_rank})", leave=False):
+            if step % model.multistep == 0:
+                # model predicts multistep actions per step => only query vlm every multistep steps
+                response = query_vlm(self.env, vlm_client, subtask)
+                static_traj_img = build_trajectory_image(self.env, response, save_traj_imgs=False)
             action = model.step(static_traj_img.to(obs["rgb_obs"]["rgb_gripper"].device), obs["rgb_obs"]["rgb_gripper"], goal)
             # print(action.shape)
             obs, _, _, current_info = self.env.step(action)
