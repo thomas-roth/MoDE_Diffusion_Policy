@@ -17,6 +17,9 @@ def _get_latest_model_path(logs_path: Path) -> str:
         last_day_path = all_days_path[0]
         all_runs_last_day_path = [dir for dir in last_day_path.iterdir() if dir.is_dir()]
         all_runs_last_day_path.sort()
+
+        if len(all_runs_last_day_path) == 0:
+            return None
         last_run_last_day_path = all_runs_last_day_path[-1]
         
         seed = last_run_last_day_path.name.split("d")[-1]
@@ -27,6 +30,10 @@ def _get_latest_model_path(logs_path: Path) -> str:
         
         models_last_run_last_day_path = [dir for dir in models_last_run_last_day_path.iterdir() if dir.is_dir()]
         models_last_run_last_day_path.sort()
+
+        if len(models_last_run_last_day_path) == 0:
+            return None
+
         latest_model_path = models_last_run_last_day_path[-1]
         return latest_model_path
 
