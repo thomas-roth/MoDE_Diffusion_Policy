@@ -6,7 +6,7 @@ defaults:
   - override hydra/hydra_logging: colorlog
 
 
-root_data_dir: /DATA/calvin/task_D_D
+root_data_dir: /home/troth/data/task_D_D
 vis_lang_folder: /home/troth/bt/iTRAP/iTRAP/models/MoDE_Diffusion_Policy/dataset/vis_lang_clip_vit-b16_resnet50
 clip_vis_model_name: ViT-B/16
 clip_lang_model_name: ViT-B/32
@@ -15,8 +15,8 @@ log_dir: ./logs
 slurm: false
 seed: 242
 device: 'cuda'
-batch_size: 16 #64 # 38 # 128
-devices: 4
+batch_size: 256 #16 #64 # 38 # 128
+devices: 2 #4
 act_dim: 7
 proprio_dims: 7
 obs_dim: 512
