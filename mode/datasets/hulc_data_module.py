@@ -109,12 +109,15 @@ class HulcDataModule(pl.LightningDataModule):
                 cam_transforms.append(instantiated_transform)
             self.train_transforms[cam] = cam_transforms
 
-        self.val_transforms = {cam: []}
+        self.val_transforms = {}
         for cam in transforms.val:
             for transform in transforms.val[cam]:
                 if transform._target_ == "lfp.utils.transforms.NormalizeVector":
                         transform._target_ = "mode.utils.transforms.NormalizeVector"
-                hydra.utils.instantiate(transform)
+                if cam in self.val_transforms:
+                    self.val_transforms[cam].append(hydra.utils.instantiate(transform))
+                else:
+                    self.val_transforms[cam] = [hydra.utils.instantiate(transform)]
         
         self.train_transforms = {key: torchvision.transforms.Compose(val) for key, val in self.train_transforms.items()}
         self.val_transforms = {key: torchvision.transforms.Compose(val) for key, val in self.val_transforms.items()}
