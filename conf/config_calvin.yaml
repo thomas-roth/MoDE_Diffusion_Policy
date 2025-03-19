@@ -6,7 +6,7 @@ defaults:
   - override hydra/hydra_logging: colorlog
 
 
-root_data_dir: /hkfs/work/workspace/scratch/ft4740-play3/data/task_ABC_D
+root_data_dir: /workspace/data/task_D_D
 lang_folder: lang_clip_resnet50
 vis_clip_model_name: ViT-B/16
 clip_lang_model_name: ViT-B/32
@@ -15,8 +15,8 @@ log_dir: ./logs
 slurm: false
 seed: 242
 device: 'cuda'
-batch_size: 64 # 38 # 128
-devices: 4
+batch_size: 256 #64 # 38 # 128
+devices: 2 #4
 act_dim: 7
 proprio_dims: 7
 obs_dim: 512
@@ -27,10 +27,10 @@ multistep: 10 #${act_seq_len}
 p_last_state: 0
 gen_img_res: 112
 max_epochs: 20
-rollout_lh_skip_epochs: 9
+rollout_lh_skip_epochs: 1 #9
 num_workers: 12
-benchmark_name: calvin_abc # calvin_abcd
-use_extracted_rel_actions: true
+benchmark_name: mode_calvin_d # calvin_abcd
+use_extracted_rel_actions: false
 
 trainer:
   devices: ${devices}
@@ -39,7 +39,7 @@ trainer:
   sync_batchnorm: True
   accelerator: gpu
   strategy: "ddp" 
-  limit_train_batches: 1000
+  limit_train_batches: 0.1 #1.0 #1000
   limit_val_batches: 4
 
 
@@ -51,7 +51,7 @@ logger:
   group: mode
   log_model: false
   project: ${benchmark_name}
-  entity: bennoq
+  entity: thomas-roth-karlsruhe-institute-of-technology
   id: ???
 
 
