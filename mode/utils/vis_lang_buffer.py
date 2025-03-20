@@ -21,8 +21,6 @@ class AdvancedVisLangEmbeddingBuffer:
         self.buffer_lock = threading.Lock()
         self.logger = logging.getLogger(__name__)
 
-        self.goal_projection_layer = FiLMLayer(condition_dim=self.language_encoder.output_dim, num_features=512)
-
 
     def get_or_encode_vis_lang_batch(self, images: torch.Tensor, texts: list):
         if len(images.shape) == 3:
@@ -47,9 +45,8 @@ class AdvancedVisLangEmbeddingBuffer:
             # If an error occurs, encode text batch from scratch
             encoded_texts = self.language_encoder(texts).squeeze(1)
 
-        encoded_vis_batch = self.vision_encoder(images).squeeze(1)
+        encoded_goal = self.vision_encoder(images.permute(0, 3, 1, 2), encoded_texts).squeeze(1) # (b, h, w, c) -> (b, c, h, w)
 
-        encoded_goal = self.goal_projection_layer(x=encoded_vis_batch, condition=encoded_texts, unsqueeze=False)
         return encoded_goal
 
 

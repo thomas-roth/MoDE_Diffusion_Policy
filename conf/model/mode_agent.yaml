@@ -82,6 +82,7 @@ language_goal:
   model_name: ${clip_lang_model_name}
 
 vision_goal:
-  _target_: mode.models.networks.clip_vis_encoder.VisClip
+  _target_: mode.models.perceptual_encoders.pretrained_resnets.FiLMResNet50Policy
   _recursive_: false
-  model_name: ${clip_vis_model_name}
+  condition_dim: ${model.cond_dim}
+  output_in_condition_dim: true
