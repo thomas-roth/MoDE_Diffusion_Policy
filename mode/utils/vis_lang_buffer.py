@@ -1,13 +1,8 @@
 import logging
-from pathlib import Path
-import sys
 import threading
 from collections import OrderedDict
 import pickle
 import torch
-
-sys.path.append(str(Path(__file__).absolute().parents[2]))
-from mode.models.perceptual_encoders.pretrained_resnets import FiLMLayer
 
 
 
@@ -44,6 +39,9 @@ class AdvancedVisLangEmbeddingBuffer:
 
             # If an error occurs, encode text batch from scratch
             encoded_texts = self.language_encoder(texts).squeeze(1)
+
+        # normalize images to [0, 1]
+        images = images.float() / 255.0
 
         encoded_goal = self.vision_encoder(images.permute(0, 3, 1, 2), encoded_texts).squeeze(1) # (b, h, w, c) -> (b, c, h, w)
 

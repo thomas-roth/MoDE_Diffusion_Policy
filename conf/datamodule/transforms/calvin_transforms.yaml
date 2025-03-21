@@ -1,7 +1,7 @@
 train:
   rgb_static:
     - _target_: torchvision.transforms.Resize
-      size: 200 #224
+      size: 133 #224
       antialias: True
     - _target_: mode.utils.transforms.RandomShiftsAug
       pad: 10
@@ -11,7 +11,7 @@ train:
       std: [0.26862954, 0.26130258, 0.27577711]
   rgb_gripper:
     - _target_: torchvision.transforms.Resize
-      size: 200 #224
+      size: 133 #224
       antialias: True
     - _target_: mode.utils.transforms.RandomShiftsAug
       pad: 4

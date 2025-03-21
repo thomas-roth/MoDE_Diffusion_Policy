@@ -17,9 +17,6 @@ class FiLMLayer(nn.Module):
         nn.init.zeros_(self.beta.bias)
 
     def forward(self, x, condition, unsqueeze=True):
-        self.gamma.to(device=condition.device, dtype=condition.dtype)
-        self.beta.to(device=condition.device, dtype=condition.dtype)
-
         gamma = self.gamma(condition)
         beta = self.beta(condition)
 
