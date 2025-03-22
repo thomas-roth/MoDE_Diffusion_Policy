@@ -30,6 +30,9 @@ class FiLMLayer(nn.Module):
 class FiLMResNet50Policy(nn.Module):
     def __init__(self, condition_dim, output_in_condition_dim=False):
         super(FiLMResNet50Policy, self).__init__()
+
+        self.model_name = "FiLMResNet50"
+
         # Load pretrained ResNet50 with weights from ImageNet-1K
         self.resnet = create_model('resnet50', pretrained=True, num_classes=0)
         
