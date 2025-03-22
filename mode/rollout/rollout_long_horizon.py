@@ -143,6 +143,12 @@ class RolloutLongHorizon(Callback):
         self.val_annotations = val_annotations
         self.debug = debug
 
+        complete_calvin_cfg = hydra.compose(config_name="config_calvin")
+        val_transforms_cfg = complete_calvin_cfg.datamodule.transforms.val.rgb_static
+        self.val_transforms = []
+        for val_transform_cfg in val_transforms_cfg:
+            self.val_transforms.append(hydra.utils.instantiate(val_transform_cfg))
+
     def on_validation_start(self, trainer: Trainer, pl_module: LightningModule) -> None:
         """Called when the validation loop begins."""
         if self.env is None:
@@ -313,9 +319,15 @@ class RolloutLongHorizon(Callback):
         for step in tqdm(range(self.ep_len), total=self.ep_len, desc=f"Rollout for {subtask} (rank={local_rank})", leave=False):
             if step % model.multistep == 0:
                 # model predicts multistep actions per step => only query vlm every multistep steps
-                response = query_vlm(self.env, vlm_client, subtask)
-                static_traj_img = build_trajectory_image(self.env, response, save_traj_imgs=False)
-            action = model.step(static_traj_img.to(obs["rgb_obs"]["rgb_gripper"].device), obs["rgb_obs"]["rgb_gripper"], goal)
+                untransformed_static_img = self.env.cameras[0].render()[0].squeeze()
+                response = query_vlm(untransformed_static_img, vlm_client, subtask)
+                untransformed_static_traj_img = build_trajectory_image(untransformed_static_img, response, save_traj_imgs=True, task_nr=step, task=subtask)
+
+                transformed_static_traj_img = torch.tensor(untransformed_static_traj_img).permute(2, 0, 1).unsqueeze(0)
+                for val_transform in self.val_transforms:
+                    transformed_static_traj_img = val_transform(transformed_static_traj_img)
+
+            action = model.step(transformed_static_traj_img.to(obs["rgb_obs"]["rgb_gripper"].device), obs["rgb_obs"]["rgb_gripper"], goal)
             # print(action.shape)
             obs, _, _, current_info = self.env.step(action)
             if self.debug and os.environ.get("DISPLAY") is not None:

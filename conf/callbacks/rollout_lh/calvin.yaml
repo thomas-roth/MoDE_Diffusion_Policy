@@ -10,7 +10,7 @@ rollout_freq: 2 #5
 num_videos: 0
 num_sequences: 100 #1000 # 128
 replan_freq: 30
-ep_len: 360
+ep_len: 150 #360 #TODO?: change back if time not an issue
 empty_cache: false
 log_video_to_file: False
 save_dir: ./videos

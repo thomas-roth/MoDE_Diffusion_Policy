@@ -528,7 +528,7 @@ class MoDEAgent(pl.LightningModule):
         # 1. extract the revelant visual observations
         latent_goal = None
         # last images are the randomly sampled future goal images for models learned with image goals 
-        rgb_static = dataset_batch["vis_image"].permute(0, 3, 1, 2).unsqueeze(1) # [:, :-1]
+        rgb_static = dataset_batch["vis_image"] # [:, :-1]
         rgb_gripper = dataset_batch["rgb_obs"]['rgb_gripper'] # [:, :-1]
 
         if self.use_image_text_not_embedding:
@@ -591,7 +591,7 @@ class MoDEAgent(pl.LightningModule):
             self.precompute_expert_for_inference(latent_goal)
             self.need_precompute_experts_for_inference = False
         
-        perceptual_emb = self.embed_visual_obs(rgb_static.unsqueeze(0).unsqueeze(1).permute(0, 1, 4, 2, 3), rgb_gripper, latent_goal)
+        perceptual_emb = self.embed_visual_obs(rgb_static.unsqueeze(0), rgb_gripper, latent_goal)
         
         act_seq = self.denoise_actions(
             torch.zeros_like(latent_goal).to(latent_goal.device),
