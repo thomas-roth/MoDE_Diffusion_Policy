@@ -7,7 +7,7 @@ defaults:
 
 
 root_data_dir: /home/troth/data/task_D_D
-vis_lang_folder: /home/troth/bt/iTRAP/iTRAP/models/MoDE_Diffusion_Policy/dataset/vis_lang_clip_vit-b16_resnet50
+vis_lang_folder: /home/troth/bt/iTRAP/iTRAP/models/MoDE_Diffusion_Policy/datasets/vis_lang_clip_vit-b16_resnet50
 clip_vis_model_name: ViT-B/32
 clip_lang_model_name: ViT-B/32
 
