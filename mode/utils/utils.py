@@ -195,3 +195,11 @@ def format_sftp_path(path):
         path = Path(f"/run/user/{uid}/gvfs/sftp:host={path.as_posix()[6:]}")
     return path
 
+
+def unpack_npy_or_npz_file(file_path: str):
+    data = np.load(file_path, allow_pickle=True)
+
+    if file_path.endswith(".npy"):
+        data = data.item()
+
+    print(data.keys())
