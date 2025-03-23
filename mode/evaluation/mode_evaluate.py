@@ -108,7 +108,7 @@ def print_and_save(total_results, plan_dicts, cfg, log_dir=None):
     print(f"Best model: epoch {max(ranking, key=ranking.get)} with average sequences length of {max(ranking.values())}")
 
 
-def evaluate_policy(model, env, vis_lang_embeddings, cfg, num_videos=0, save_dir=None):
+def evaluate_policy(model, env, lang_embeddings, cfg, num_videos=0, save_dir=None):
     task_oracle = hydra.utils.instantiate(cfg.tasks)
     val_lang_annotations = cfg.annotations
 
@@ -135,7 +135,7 @@ def evaluate_policy(model, env, vis_lang_embeddings, cfg, num_videos=0, save_dir
     for i, (initial_state, eval_sequence) in enumerate(eval_sequences):
         record = i < num_videos
         result = evaluate_sequence(
-            env, model, task_oracle, initial_state, eval_sequence, vis_lang_embeddings, val_lang_annotations, cfg, record, rollout_video, i
+            env, model, task_oracle, initial_state, eval_sequence, lang_embeddings, val_lang_annotations, cfg, record, rollout_video, i
         )
         results.append(result)
         if record:
@@ -154,7 +154,7 @@ def evaluate_policy(model, env, vis_lang_embeddings, cfg, num_videos=0, save_dir
 
 
 def evaluate_sequence(
-    env, model, task_checker, initial_state, eval_sequence, vis_lang_embeddings, val_lang_annotations, cfg, record, rollout_video, i
+    env, model, task_checker, initial_state, eval_sequence, lang_embeddings, val_lang_annotations, cfg, record, rollout_video, i
 ):
     robot_obs, scene_obs = get_env_state_for_initial_condition(initial_state)
     env.reset(robot_obs=robot_obs, scene_obs=scene_obs)
@@ -171,7 +171,7 @@ def evaluate_sequence(
     for subtask in eval_sequence:
         if record:
             rollout_video.new_subtask()
-        success = rollout(env, model, task_checker, cfg, subtask, vis_lang_embeddings, val_lang_annotations, record, rollout_video)
+        success = rollout(env, model, task_checker, cfg, subtask, lang_embeddings, val_lang_annotations, record, rollout_video)
         if record:
             rollout_video.draw_outcome(success)
         if success:
@@ -181,16 +181,15 @@ def evaluate_sequence(
     return success_counter
 
 
-def rollout(env, model, task_oracle, cfg, subtask, vis_lang_embeddings, val_lang_annotations, record=False, rollout_video=None):
+def rollout(env, model, task_oracle, cfg, subtask, lang_embeddings, val_lang_annotations, record=False, rollout_video=None):
     if cfg.debug:
         print(f"{subtask} ", end="")
         time.sleep(0.5)
     obs = env.get_obs()
-    # get vision-language goal embedding for subtask
-    goal = {}
-    goal["vis_image"] = vis_lang_embeddings.get_vis_lang_goal(subtask)["vis_ann"]
-    goal["lang_text"] = vis_lang_embeddings.get_vis_lang_goal(subtask)["lang_ann"][0]
+    # get lang goal embedding for subtask
     lang_annotation_sentence = val_lang_annotations[subtask][0]
+    goal = lang_embeddings.get_lang_goal(subtask)
+    goal["lang_text"] = lang_annotation_sentence
 
     model.reset()
     start_info = env.get_info()
@@ -227,18 +226,18 @@ def main(cfg):
     seed_everything(0, workers=True)  # type:ignore
     # evaluate a custom model
     # checkpoints = [get_last_checkpoint(Path(cfg.train_folder))]
-    vis_lang_embeddings = None
+    lang_embeddings = None
     env = None
     results = {}
     plans = {}
 
     print(cfg.device)
-    model, env, _, vis_lang_embeddings = get_default_mode_and_env(
+    model, env, _, lang_embeddings = get_default_mode_and_env(
         cfg.train_folder,
         cfg.dataset_path,
         cfg.checkpoint,
         env=env,
-        vis_lang_embeddings=vis_lang_embeddings,
+        lang_embeddings=lang_embeddings,
         eval_cfg_overwrite=cfg.eval_cfg_overwrite,
         device_id=cfg.device,
     )
@@ -272,7 +271,7 @@ def main(cfg):
             # dir=log_dir / "wandb",
         )
 
-    results[Path(cfg.checkpoint)], plans[Path(cfg.checkpoint)] = evaluate_policy(model, env, vis_lang_embeddings, cfg, num_videos=cfg.num_videos, save_dir=Path(log_dir))
+    results[Path(cfg.checkpoint)], plans[Path(cfg.checkpoint)] = evaluate_policy(model, env, lang_embeddings, cfg, num_videos=cfg.num_videos, save_dir=Path(log_dir))
     print_and_save(results, plans, cfg, log_dir=log_dir)
     
     if log_wandb:

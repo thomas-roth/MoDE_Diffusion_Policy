@@ -3,6 +3,8 @@ from itertools import chain
 import logging
 import multiprocessing
 import os
+from pathlib import Path
+import sys
 from typing import Any
 
 import hydra
@@ -13,8 +15,10 @@ import torch
 import torch.distributed as dist
 from tqdm import tqdm
 
+sys.path.append(str(Path(__file__).absolute().parents[5]))
+from iTRAP.evaluation.itrap_evaluate import build_trajectory_image, query_vlm, setup_vlm_client
 from mode.evaluation.multistep_sequences import get_sequences
-from mode.evaluation.utils import get_env_state_for_initial_condition, join_vis_lang, VisLangEmbeddings
+from mode.evaluation.utils import get_env_state_for_initial_condition, join_vis_lang, LangEmbeddings
 from mode.rollout.rollout_video import RolloutVideo
 from mode.models.mode_agent import MoDEAgent
 
@@ -133,11 +137,17 @@ class RolloutLongHorizon(Callback):
         self.rollout_video = None  # type: Any
         self.empty_cache = empty_cache
         self.device = None  # type: Any
-        self.vis_lang_embeddings = None
+        self.lang_embeddings = None
         self.vis_lang_folder = vis_lang_folder
         self.eval_sequences = None
         self.val_annotations = val_annotations
         self.debug = debug
+
+        complete_calvin_cfg = hydra.compose(config_name="config_calvin")
+        val_transforms_cfg = complete_calvin_cfg.datamodule.transforms.val.rgb_static
+        self.val_transforms = []
+        for val_transform_cfg in val_transforms_cfg:
+            self.val_transforms.append(hydra.utils.instantiate(val_transform_cfg))
 
     def on_validation_start(self, trainer: Trainer, pl_module: LightningModule) -> None:
         """Called when the validation loop begins."""
@@ -185,7 +195,7 @@ class RolloutLongHorizon(Callback):
                     )
 
                 # Initialize language embeddings with the dataset
-                self.vis_lang_embeddings = VisLangEmbeddings(
+                self.lang_embeddings = LangEmbeddings(
                     dataset.abs_datasets_dir, 
                     dataset.vis_lang_folder, 
                     device=pl_module.device
@@ -253,6 +263,8 @@ class RolloutLongHorizon(Callback):
         )
 
     def evaluate_policy(self, model):
+        vlm_client = setup_vlm_client()
+
         results = []
         total_evaluations = len(self.eval_sequences)
         local_rank = int(dist.get_rank()) if (dist.is_available() and dist.is_initialized()) else 0
@@ -261,13 +273,13 @@ class RolloutLongHorizon(Callback):
                      desc=f"Evaluating Policy(rank={local_rank})",
                      total=total_evaluations, position=local_rank)):
             record = i < self.num_videos
-            result = self.evaluate_sequence(model, initial_state, eval_sequence, record, i)
+            result = self.evaluate_sequence(vlm_client, model, initial_state, eval_sequence, record, i)
             results.append(result)
             if record:
                 self.rollout_video.write_to_tmp()
         return results
 
-    def evaluate_sequence(self, model, initial_state, eval_sequence, record, i):
+    def evaluate_sequence(self, vlm_client, model, initial_state, eval_sequence, record, i):
         robot_obs, scene_obs = get_env_state_for_initial_condition(initial_state)
         self.env.reset(robot_obs=robot_obs, scene_obs=scene_obs)
         if record:
@@ -282,7 +294,7 @@ class RolloutLongHorizon(Callback):
         for subtask in eval_sequence:
             if record:
                 self.rollout_video.new_subtask()
-            success = self.rollout(model, subtask, record)
+            success = self.rollout(vlm_client, model, subtask, record)
             if record:
                 self.rollout_video.draw_outcome(success)
             if success:
@@ -291,20 +303,36 @@ class RolloutLongHorizon(Callback):
                 return success_counter
         return success_counter
 
-    def rollout(self, model, subtask, record):
+    def rollout(self, vlm_client, model, subtask, record):
         if self.debug:
             print(f"{subtask} ", end="")
+
         obs = self.env.get_obs()
+
         # get lang annotation for subtask
         lang_annotation = self.val_annotations[subtask][0]
-        # get vision-language goal embedding
-        goal = self.vis_lang_embeddings.get_vis_lang_goal(subtask)
-        goal["vis_image"] = goal["vis_ann"]
-        goal["lang_text"] = lang_annotation
+
+        # get lang goal embedding
+        goal = self.lang_embeddings.get_lang_goal(subtask)
+
+        # get trajectory image (untransformed bc using render() instead of get_obs())
+        untransformed_static_img = self.env.cameras[0].render()[0].squeeze()
+        response = query_vlm(untransformed_static_img, vlm_client, subtask)
+        untransformed_static_traj_img = build_trajectory_image(untransformed_static_img, response, save_traj_imgs=False)
+
+        # apply transforms to trajectory image
+        transformed_static_traj_img = untransformed_static_traj_img.permute(2, 0, 1).unsqueeze(0) # (H, W, C) -> (C, H, W)
+        for val_transform in self.val_transforms:
+            transformed_static_traj_img = val_transform(transformed_static_traj_img)
+        
+        # add trajectory image to goal
+        goal["vis_image"] = transformed_static_traj_img.to(obs["rgb_obs"]["rgb_static"].device)
+
         model.reset()
         start_info = self.env.get_info()
+
         success = False
-        for step in range(self.ep_len):
+        for step in tqdm(range(self.ep_len), desc=f"Rolling out policy for task {subtask}", leave=False):
             action = model.step(obs, goal)
             # print(action.shape)
             obs, _, _, current_info = self.env.step(action)

@@ -15,7 +15,7 @@ observation_space:
   depth_obs: []
   state_obs: ['robot_obs']
   actions: ['rel_actions']
-  vision: ['vision'] # TODO: needed?
+  vision: ['vision']
   language: ['language']
 
 proprioception_dims:
