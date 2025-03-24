@@ -16,7 +16,7 @@ import torch.distributed as dist
 from tqdm import tqdm
 
 sys.path.append(str(Path(__file__).parents[5]))
-from iTRAP.evaluation.itrap_evaluate import setup_vlm_client, query_vlm, build_trajectory_image
+from iTRAP.evaluation.utils import setup_vlm_client, query_vlm, build_trajectory_image
 from mode.evaluation.multistep_sequences import get_sequences
 from mode.evaluation.utils import get_env_state_for_initial_condition, join_vis_lang, LangEmbeddings
 from mode.rollout.rollout_video import RolloutVideo
@@ -307,11 +307,11 @@ class RolloutLongHorizon(Callback):
         if self.debug:
             print(f"{subtask} ", end="")
         obs = self.env.get_obs()
-        # get lang annotation for subtask
-        lang_annotation = self.val_annotations[subtask][0]
-        # get lang goal embedding
+
+        # get lang goal embedding & annotation text for subtask
         goal = self.lang_embeddings.get_lang_goal(subtask)
-        goal["lang_text"] = lang_annotation
+        goal["lang_text"] = self.val_annotations[subtask][0]
+
         model.reset()
         start_info = self.env.get_info()
 
@@ -320,8 +320,8 @@ class RolloutLongHorizon(Callback):
             if step % model.multistep == 0:
                 # model predicts multistep actions per step => only query vlm every multistep steps
                 untransformed_static_img = self.env.cameras[0].render()[0].squeeze()
-                response = query_vlm(untransformed_static_img, vlm_client, subtask)
-                untransformed_static_traj_img = build_trajectory_image(untransformed_static_img, response, save_traj_imgs=True, task_nr=step, task=subtask)
+                response = query_vlm(untransformed_static_img, vlm_client, goal["lang_text"])
+                untransformed_static_traj_img = build_trajectory_image(untransformed_static_img, response, save_traj_imgs=False)
 
                 transformed_static_traj_img = torch.tensor(untransformed_static_traj_img).permute(2, 0, 1).unsqueeze(0)
                 for val_transform in self.val_transforms:
@@ -332,7 +332,7 @@ class RolloutLongHorizon(Callback):
             obs, _, _, current_info = self.env.step(action)
             if self.debug and os.environ.get("DISPLAY") is not None:
                 img = self.env.render(mode="rgb_array")
-                join_vis_lang(img, lang_annotation)
+                join_vis_lang(img, goal["lang_text"])
             if record:
                 # update video
                 self.rollout_video.update(obs["rgb_obs"]["rgb_static"])
@@ -347,5 +347,5 @@ class RolloutLongHorizon(Callback):
             else:
                 print(colored("fail", "red"), end=" ")
         if record:
-            self.rollout_video.add_language_instruction(lang_annotation)
+            self.rollout_video.add_language_instruction(goal["lang_text"])
         return success

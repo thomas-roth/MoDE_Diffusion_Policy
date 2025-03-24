@@ -250,12 +250,12 @@ def join_vis_lang(img, lang_text):
 
 class LangEmbeddings:
     def __init__(self, val_dataset_path, vis_lang_folder, device=torch.device("cuda:0")):
-        self.vis_lang_embeddings = np.load(Path(val_dataset_path) / vis_lang_folder / "validation" / "embeddings.npy", allow_pickle=True).item()
+        self.lang_embeddings = np.load(Path(val_dataset_path) / vis_lang_folder / "validation" / "embeddings.npy", allow_pickle=True).item()
         self.device = device
 
     def get_lang_goal(self, task):
-        return {"lang_text": self.vis_lang_embeddings[task]["ann"][0],
-                "lang": torch.from_numpy(self.vis_lang_embeddings[task]["emb"]).squeeze(0).float().to(self.device)}
+        return {"lang_text": self.lang_embeddings[task]["ann"][0],
+                "lang": torch.from_numpy(self.lang_embeddings[task]["emb"]).squeeze(0).float().to(self.device)}
 
 
 """
