@@ -254,7 +254,8 @@ class LangEmbeddings:
         self.device = device
 
     def get_lang_goal(self, task):
-        return {"lang": torch.from_numpy(self.vis_lang_embeddings[task]["lang_emb"]).to(self.device).squeeze(0).float()}
+        return {"lang_text": self.vis_lang_embeddings[task]["ann"][0],
+                "lang": torch.from_numpy(self.vis_lang_embeddings[task]["emb"]).squeeze(0).float().to(self.device)}
 
 
 """
