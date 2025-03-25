@@ -309,15 +309,13 @@ class RolloutLongHorizon(Callback):
 
         obs = self.env.get_obs()
 
-        # get lang annotation for subtask
-        lang_annotation = self.val_annotations[subtask][0]
-
-        # get lang goal embedding
+        # get lang goal embedding & lang annotation for subtask
         goal = self.lang_embeddings.get_lang_goal(subtask)
+        goal["lang_text"] = self.val_annotations[subtask][0]
 
         # get trajectory image (untransformed bc using render() instead of get_obs())
         untransformed_static_img = self.env.cameras[0].render()[0].squeeze()
-        response = query_vlm(untransformed_static_img, vlm_client, lang_annotation)
+        response = query_vlm(untransformed_static_img, vlm_client, goal["lang_text"])
         untransformed_static_traj_img = build_trajectory_image(untransformed_static_img, response, save_traj_imgs=False)
 
         # apply transforms to trajectory image
@@ -338,7 +336,7 @@ class RolloutLongHorizon(Callback):
             obs, _, _, current_info = self.env.step(action)
             if self.debug and os.environ.get("DISPLAY") is not None:
                 img = self.env.render(mode="rgb_array")
-                join_vis_lang(img, lang_annotation)
+                join_vis_lang(img, goal["lang_text"])
             if record:
                 # update video
                 self.rollout_video.update(obs["rgb_obs"]["rgb_static"])
@@ -353,5 +351,5 @@ class RolloutLongHorizon(Callback):
             else:
                 print(colored("fail", "red"), end=" ")
         if record:
-            self.rollout_video.add_language_instruction(lang_annotation)
+            self.rollout_video.add_language_instruction(goal["lang_text"])
         return success
