@@ -332,7 +332,7 @@ class RolloutLongHorizon(Callback):
         local_rank = int(dist.get_rank()) if (dist.is_available() and dist.is_initialized()) else 0
 
         success = False
-        for step in tqdm(range(self.ep_len), total=self.ep_len, desc=f"Rolling out policy for task {subtask} (rank={local_rank})", leave=False):
+        for step in tqdm(range(self.ep_len), total=self.ep_len, desc=f"Rolling out policy for {subtask} (rank={local_rank})", leave=False):
             action = model.step(obs, goal)
             # print(action.shape)
             obs, _, _, current_info = self.env.step(action)
