@@ -536,7 +536,7 @@ class MoDEAgent(pl.LightningModule):
         if self.use_image_text_not_embedding:
             latent_goal = self.vis_lang_buffers.get_vis_lang_goal_embeddings(dataset_batch["vis_image"], dataset_batch["lang_text"]).to(rgb_static.dtype)
         else:
-            latent_goal = torch.cat(self.vision_goal(dataset_batch["vis"]), self.language_goal(dataset_batch["lang"])).to(rgb_static.dtype)
+            latent_goal = self.vision_goal(dataset_batch["vis"], self.language_goal(dataset_batch["lang"])).to(rgb_static.dtype)
 
         perceptual_emb = self.embed_visual_obs(rgb_static, rgb_gripper, latent_goal)
 
@@ -585,17 +585,17 @@ class MoDEAgent(pl.LightningModule):
         """
         Method for doing inference with the model.
         """
+        
+        rgb_static = obs["rgb_obs"]["rgb_static"]
+        rgb_gripper = obs["rgb_obs"]["rgb_gripper"]
+
         if self.use_image_text_not_embedding:
             latent_goal = self.vis_lang_buffers.get_vis_lang_goal_embedding(goal["vis_image"], goal["lang_text"]).to(torch.float32)
         else:
-            latent_goal = torch.cat(self.vision_goal(goal["vis"]), self.language_goal(goal["lang"])).unsqueeze(0).to(torch.float32).to(obs["rgb_obs"]['rgb_static'].device)
+            latent_goal = self.vision_goal(goal["vis"], self.language_goal(goal["lang"])).unsqueeze(0).to(torch.float32).to(rgb_static.device)
         if self.need_precompute_experts_for_inference:
             self.precompute_expert_for_inference(latent_goal)
             self.need_precompute_experts_for_inference = False
-        
-
-        rgb_static = obs["rgb_obs"]['rgb_static']
-        rgb_gripper = obs["rgb_obs"]['rgb_gripper']
 
         perceptual_emb = self.embed_visual_obs(rgb_static, rgb_gripper, latent_goal)
         

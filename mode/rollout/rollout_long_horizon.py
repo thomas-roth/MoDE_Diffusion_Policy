@@ -16,7 +16,7 @@ import torch.distributed as dist
 from tqdm import tqdm
 
 sys.path.append(str(Path(__file__).absolute().parents[5]))
-from iTRAP.evaluation.itrap_evaluate import build_trajectory_image, query_vlm, setup_vlm_client
+from iTRAP.evaluation.utils import setup_vlm_client, query_vlm, build_trajectory_image
 from mode.evaluation.multistep_sequences import get_sequences
 from mode.evaluation.utils import get_env_state_for_initial_condition, join_vis_lang, LangEmbeddings
 from mode.rollout.rollout_video import RolloutVideo
@@ -270,7 +270,7 @@ class RolloutLongHorizon(Callback):
         local_rank = int(dist.get_rank()) if (dist.is_available() and dist.is_initialized()) else 0
         for i, (initial_state, eval_sequence) in enumerate(
                 tqdm(self.eval_sequences,
-                     desc=f"Evaluating Policy(rank={local_rank})",
+                     desc=f"Evaluating Policy (rank={local_rank})",
                      total=total_evaluations, position=local_rank)):
             record = i < self.num_videos
             result = self.evaluate_sequence(vlm_client, model, initial_state, eval_sequence, record, i)
@@ -309,13 +309,13 @@ class RolloutLongHorizon(Callback):
 
         obs = self.env.get_obs()
 
-        # get lang goal embedding & lang annotation for subtask
+        # get lang goal embedding & annotation for subtask
         goal = self.lang_embeddings.get_lang_goal(subtask)
         goal["lang_text"] = self.val_annotations[subtask][0]
 
         # get trajectory image (untransformed bc using render() instead of get_obs())
         untransformed_static_img = self.env.cameras[0].render()[0].squeeze()
-        response = query_vlm(untransformed_static_img, vlm_client, goal["lang_text"])
+        response = query_vlm(untransformed_static_img, vlm_client, subtask)
         untransformed_static_traj_img = build_trajectory_image(untransformed_static_img, response, save_traj_imgs=False)
 
         # apply transforms to trajectory image
@@ -329,8 +329,10 @@ class RolloutLongHorizon(Callback):
         model.reset()
         start_info = self.env.get_info()
 
+        local_rank = int(dist.get_rank()) if (dist.is_available() and dist.is_initialized()) else 0
+
         success = False
-        for step in tqdm(range(self.ep_len), desc=f"Rolling out policy for task {subtask}", leave=False):
+        for step in tqdm(range(self.ep_len), total=self.ep_len, desc=f"Rolling out policy for task {subtask} (rank={local_rank})", leave=False):
             action = model.step(obs, goal)
             # print(action.shape)
             obs, _, _, current_info = self.env.step(action)
