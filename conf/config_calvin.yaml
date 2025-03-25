@@ -27,7 +27,7 @@ multistep: 10 #${act_seq_len}
 p_last_state: 0
 gen_img_res: 112
 max_epochs: 20
-rollout_lh_skip_epochs: 5
+rollout_lh_skip_epochs: 1 #5
 num_workers: 12
 benchmark_name: mode_calvin_d
 use_extracted_rel_actions: false
@@ -39,7 +39,7 @@ trainer:
   sync_batchnorm: True
   accelerator: gpu
   strategy: "ddp" 
-  limit_train_batches: 1.0 # percentage of train data to use
+  limit_train_batches: 0.1 #1.0 # percentage of train data to use
   limit_val_batches: 4
 
 
