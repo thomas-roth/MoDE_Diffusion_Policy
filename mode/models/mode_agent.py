@@ -579,10 +579,14 @@ class MoDEAgent(pl.LightningModule):
         self.latent_goal = None
         self.rollout_step_counter = 0
 
-    def forward(self, rgb_static, rgb_gripper, goal):
+    def forward(self, obs, goal):
         """
         Method for doing inference with the model.
         """
+
+        rgb_static = obs["rgb_obs"]["rgb_static"]
+        rgb_gripper = obs["rgb_obs"]["rgb_gripper"]
+
         if self.use_image_text_not_embedding:
             latent_goal = self.lang_buffer.get_goal_instruction_embedding(goal["lang_text"]).to(torch.float32)
         else:
@@ -591,7 +595,7 @@ class MoDEAgent(pl.LightningModule):
             self.precompute_expert_for_inference(latent_goal)
             self.need_precompute_experts_for_inference = False
         
-        perceptual_emb = self.embed_visual_obs(rgb_static.unsqueeze(0), rgb_gripper, latent_goal)
+        perceptual_emb = self.embed_visual_obs(rgb_static, rgb_gripper, latent_goal)
         
         act_seq = self.denoise_actions(
             torch.zeros_like(latent_goal).to(latent_goal.device),
@@ -601,7 +605,7 @@ class MoDEAgent(pl.LightningModule):
         )
         return act_seq
 
-    def step(self, rgb_static, rgb_gripper, goal):
+    def step(self, obs, goal):
         """
         Do one step of inference with the model. THis method handles the action chunking case.
         Our model is trained to predict a sequence of actions. 
@@ -615,7 +619,7 @@ class MoDEAgent(pl.LightningModule):
             Predicted action.
         """
         if self.rollout_step_counter % self.multistep == 0:
-            pred_action_seq = self(rgb_static, rgb_gripper, goal)
+            pred_action_seq = self(obs, goal)
 
             self.pred_action_seq = pred_action_seq  
             
