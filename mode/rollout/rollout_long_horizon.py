@@ -317,11 +317,11 @@ class RolloutLongHorizon(Callback):
 
         # get trajectory image (untransformed bc using render() instead of get_obs())
         untransformed_static_img = self.env.cameras[0].render()[0].squeeze()
-        response = query_vlm(untransformed_static_img, vlm_client, subtask)
+        response = query_vlm(untransformed_static_img, vlm_client, lang_annotation)
         untransformed_static_traj_img = build_trajectory_image(untransformed_static_img, response, save_traj_imgs=False)
 
         # apply transforms to trajectory image
-        transformed_static_traj_img = untransformed_static_traj_img.permute(2, 0, 1).unsqueeze(0) # (H, W, C) -> (C, H, W)
+        transformed_static_traj_img = torch.tensor(untransformed_static_traj_img).permute(2, 0, 1).unsqueeze(0) # (H, W, C) -> (C, H, W)
         for val_transform in self.val_transforms:
             transformed_static_traj_img = val_transform(transformed_static_traj_img)
         
