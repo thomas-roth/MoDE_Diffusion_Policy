@@ -56,8 +56,6 @@ val:
     - _target_: torchvision.transforms.Resize
       size: 160 #224
       antialias: True
-    - _target_: mode.utils.transforms.RandomShiftsAug
-      pad: 10
     - _target_: mode.utils.transforms.ScaleImageTensor
     - _target_: torchvision.transforms.Normalize
       mean: [ 0.48145466, 0.4578275, 0.40821073 ]
