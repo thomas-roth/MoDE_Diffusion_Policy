@@ -16,7 +16,7 @@ slurm: false
 seed: 242
 device: 'cuda'
 batch_size: 256 #64 # 38 # 128
-devices: 3
+devices: 2
 act_dim: 7
 proprio_dims: 7
 obs_dim: 512
@@ -33,7 +33,7 @@ benchmark_name: mode_calvin_d
 use_extracted_rel_actions: false
 
 trainer:
-  devices: 2
+  devices: ${devices}
   precision: bf16
   max_epochs: ${max_epochs}
   sync_batchnorm: True

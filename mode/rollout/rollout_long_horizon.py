@@ -15,7 +15,7 @@ import torch
 import torch.distributed as dist
 from tqdm import tqdm
 
-sys.path.append(str(Path(__file__).parents[5]))
+sys.path.append(str(Path(__file__).absolute().parents[5]))
 from iTRAP.evaluation.utils import setup_vlm_client, query_vlm, build_trajectory_image
 from mode.evaluation.multistep_sequences import get_sequences
 from mode.evaluation.utils import get_env_state_for_initial_condition, join_vis_lang, LangEmbeddings
@@ -273,13 +273,13 @@ class RolloutLongHorizon(Callback):
                      desc=f"Evaluating Policy (rank={local_rank})",
                      total=total_evaluations, position=local_rank)):
             record = i < self.num_videos
-            result = self.evaluate_sequence(vlm_client, model, initial_state, eval_sequence, record, i, local_rank)
+            result = self.evaluate_sequence(vlm_client, model, initial_state, eval_sequence, record, i)
             results.append(result)
             if record:
                 self.rollout_video.write_to_tmp()
         return results
 
-    def evaluate_sequence(self, vlm_client, model, initial_state, eval_sequence, record, i, local_rank):
+    def evaluate_sequence(self, vlm_client, model, initial_state, eval_sequence, record, i):
         robot_obs, scene_obs = get_env_state_for_initial_condition(initial_state)
         self.env.reset(robot_obs=robot_obs, scene_obs=scene_obs)
         if record:
@@ -294,7 +294,7 @@ class RolloutLongHorizon(Callback):
         for subtask in eval_sequence:
             if record:
                 self.rollout_video.new_subtask()
-            success = self.rollout(vlm_client, model, subtask, record, local_rank)
+            success = self.rollout(vlm_client, model, subtask, record)
             if record:
                 self.rollout_video.draw_outcome(success)
             if success:
@@ -303,7 +303,7 @@ class RolloutLongHorizon(Callback):
                 return success_counter
         return success_counter
 
-    def rollout(self, vlm_client, model, subtask, record, local_rank):
+    def rollout(self, vlm_client, model, subtask, record):
         if self.debug:
             print(f"{subtask} ", end="")
         obs = self.env.get_obs()
@@ -315,19 +315,24 @@ class RolloutLongHorizon(Callback):
         model.reset()
         start_info = self.env.get_info()
 
+        local_rank = int(dist.get_rank()) if (dist.is_available() and dist.is_initialized()) else 0
+
         success = False
-        for step in tqdm(range(self.ep_len), total=self.ep_len, desc=f"Rollout for {subtask} (rank={local_rank})", leave=False):
+        for step in tqdm(range(self.ep_len), total=self.ep_len, desc=f"Rolling out policy for {subtask} (rank={local_rank})", leave=False):
             if step % model.multistep == 0:
                 # model predicts multistep actions per step => only query vlm every multistep steps
+                # get trajectory image (untransformed bc using render() instead of get_obs())
                 untransformed_static_img = self.env.cameras[0].render()[0].squeeze()
-                response = query_vlm(untransformed_static_img, vlm_client, goal["lang_text"])
+                response = query_vlm(untransformed_static_img, vlm_client, subtask)
                 untransformed_static_traj_img = build_trajectory_image(untransformed_static_img, response, save_traj_imgs=False)
-
+                
+                # apply transforms to trajectory image
                 transformed_static_traj_img = torch.tensor(untransformed_static_traj_img).permute(2, 0, 1).unsqueeze(0)
                 for val_transform in self.val_transforms:
                     transformed_static_traj_img = val_transform(transformed_static_traj_img)
+                obs["rgb_obs"]["rgb_static"] = transformed_static_traj_img.unsqueeze(0).to(self.device)
 
-            action = model.step(transformed_static_traj_img.to(obs["rgb_obs"]["rgb_gripper"].device), obs["rgb_obs"]["rgb_gripper"], goal)
+            action = model.step(obs, goal)
             # print(action.shape)
             obs, _, _, current_info = self.env.step(action)
             if self.debug and os.environ.get("DISPLAY") is not None:
