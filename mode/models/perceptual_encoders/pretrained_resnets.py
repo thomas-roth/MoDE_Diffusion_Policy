@@ -19,9 +19,6 @@ class FiLMLayer(nn.Module):
         nn.init.zeros_(self.beta.bias)
 
     def forward(self, x, condition, unsqueeze=True):
-        self.gamma.to(device=condition.device, dtype=condition.dtype)
-        self.beta.to(device=condition.device, dtype=condition.dtype)
-
         gamma = self.gamma(condition)
         beta = self.beta(condition)
 
@@ -34,7 +31,7 @@ class FiLMLayer(nn.Module):
 
 
 class FiLMResNet50Policy(nn.Module):
-    def __init__(self, condition_dim):
+    def __init__(self, condition_dim, output_in_condition_dim=False):
         super(FiLMResNet50Policy, self).__init__()
         # Load pretrained ResNet50 with weights from ImageNet-1K
         self.resnet = create_model('resnet50', pretrained=True, num_classes=0)
@@ -46,6 +43,10 @@ class FiLMResNet50Policy(nn.Module):
         self.film2 = FiLMLayer(512, condition_dim)
         self.film3 = FiLMLayer(1024, condition_dim)
         self.film4 = FiLMLayer(2048, condition_dim)
+
+        self.projection_layer = None
+        if output_in_condition_dim:
+            self.projection_layer = nn.Linear(2048, condition_dim)
 
     def forward(self, x, condition):
         if len(condition.shape) == 3:
@@ -74,6 +75,9 @@ class FiLMResNet50Policy(nn.Module):
 
         x = self.resnet.global_pool(x)
         x = x.flatten(1)
+
+        if self.projection_layer is not None:
+            x = self.projection_layer(x)
 
         return x  # Return the latent features directly
 

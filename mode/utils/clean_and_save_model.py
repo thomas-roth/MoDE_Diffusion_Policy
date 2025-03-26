@@ -22,7 +22,6 @@ def _get_latest_model_path(logs_path: Path) -> str:
     
     seed = last_run_last_day_path.name.split("d")[-1]
     models_last_run_last_day_path = Path(last_run_last_day_path / f"seed_{seed}" / "saved_models")
-
     if not models_last_run_last_day_path.exists():
         return None
     

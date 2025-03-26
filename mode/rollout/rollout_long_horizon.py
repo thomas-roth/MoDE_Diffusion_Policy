@@ -306,9 +306,10 @@ class RolloutLongHorizon(Callback):
     def rollout(self, vlm_client, model, subtask, record):
         if self.debug:
             print(f"{subtask} ", end="")
+
         obs = self.env.get_obs()
 
-        # get lang goal embedding & annotation  text for subtask
+        # get lang goal embedding & annotation text for subtask
         goal = self.lang_embeddings.get_lang_goal(subtask)
         goal["lang_text"] = self.val_annotations[subtask][0]
 
@@ -318,12 +319,12 @@ class RolloutLongHorizon(Callback):
         untransformed_static_traj_img = build_trajectory_image(untransformed_static_img, response, save_traj_imgs=False)
 
         # apply transforms to trajectory image
-        transformed_traj_goal_img = torch.tensor(untransformed_static_traj_img).permute(2, 0, 1).unsqueeze(0) # (H, W, C) -> (C, H, W)
+        transformed_static_traj_img = torch.tensor(untransformed_static_traj_img).permute(2, 0, 1).unsqueeze(0) # (H, W, C) -> (C, H, W)
         for val_transform in self.val_transforms:
-            transformed_traj_goal_img = val_transform(transformed_traj_goal_img)
+            transformed_static_traj_img = val_transform(transformed_static_traj_img)
         
         # add trajectory image to goal
-        goal["vis_image"] = transformed_traj_goal_img.unsqueeze(0).to(self.device)
+        goal["vis_image"] = transformed_static_traj_img.unsqueeze(0).to(self.device)
 
         model.reset()
         start_info = self.env.get_info()
