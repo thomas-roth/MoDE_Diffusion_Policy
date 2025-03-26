@@ -139,6 +139,12 @@ class RolloutLongHorizon(Callback):
         self.val_annotations = val_annotations
         self.debug = debug
 
+        complete_calvin_cfg = hydra.compose(config_name="config_calvin")
+        val_transforms_cfg = complete_calvin_cfg.datamodule.transforms.val.rgb_static
+        self.val_transforms = []
+        for val_transform_cfg in val_transforms_cfg:
+            self.val_transforms.append(hydra.utils.instantiate(val_transform_cfg))
+
     def on_validation_start(self, trainer: Trainer, pl_module: LightningModule) -> None:
         """Called when the validation loop begins."""
         if self.env is None:
@@ -295,14 +301,23 @@ class RolloutLongHorizon(Callback):
         if self.debug:
             print(f"{subtask} ", end="")
         obs = self.env.get_obs()
+
         # get lang annotation for subtask
         lang_annotation = self.val_annotations[subtask][0]
+
         # get vision-language goal embedding
         goal = self.vis_lang_embeddings.get_vis_lang_goal(subtask)
-        goal["vis_image"] = goal["vis_ann"]
         goal["lang_text"] = lang_annotation
+
+        # apply transforms to trajectory goal image
+        transformed_traj_goal_img = torch.tensor(goal["vis_image"]).permute(2, 0, 1).unsqueeze(0)
+        for val_transform in self.val_transforms:
+            transformed_traj_goal_img = val_transform(transformed_traj_goal_img)
+        goal["vis_image"] = transformed_traj_goal_img.unsqueeze(0).to(self.device)
+
         model.reset()
         start_info = self.env.get_info()
+        
         success = False
         for step in range(self.ep_len):
             action = model.step(obs, goal)

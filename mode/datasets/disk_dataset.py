@@ -255,10 +255,10 @@ class ExtendedDiskDataset(DiskDataset):
                     episode[key] = stacked_data[:self.obs_seq_len, :]
 
         if self.with_vis_lang:
-            episode["vision"] = self.vis_ann[self.vis_lang_lookup[idx]][0]  # TODO check  [0]
-            episode["vision_image"] = self.vis_image[:, self.vis_lang_lookup[idx]][0]  # TODO check  [0]
-            episode["language"] = self.lang_ann[self.vis_lang_lookup[idx]][0]  # TODO check  [0]
-            episode["language_text"] = self.lang_text[self.vis_lang_lookup[idx]] #[0]  # TODO check  [0]
+            episode["vision"] = self.vis_ann[self.vis_lang_lookup[idx]]
+            episode["vision_image"] = self.vis_image[self.vis_lang_lookup[idx]][np.newaxis, :]
+            episode["language"] = self.lang_ann[self.vis_lang_lookup[idx]]
+            episode["language_text"] = self.lang_text[self.vis_lang_lookup[idx]]
         
 
         return episode

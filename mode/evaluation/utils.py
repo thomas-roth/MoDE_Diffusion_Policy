@@ -254,10 +254,10 @@ class VisLangEmbeddings:
         self.device = device
 
     def get_vis_lang_goal(self, task):
-        return {"vis_ann": torch.from_numpy(self.vis_lang_embeddings[task]["vis_ann"][0]).to(self.device).squeeze(0).float(),
-                "lang_ann": self.vis_lang_embeddings[task]["lang_ann"],
-                "vis": torch.from_numpy(self.vis_lang_embeddings[task]["vis_emb"]).to(self.device).squeeze(0).float(),
-                "lang": torch.from_numpy(self.vis_lang_embeddings[task]["lang_emb"]).to(self.device).squeeze(0).float()}
+        return {"vis_image": torch.from_numpy(self.vis_lang_embeddings[task]["vis_ann"]).squeeze(0).float().to(self.device),
+                "lang_text": self.vis_lang_embeddings[task]["lang_ann"][0],
+                "vis": torch.from_numpy(self.vis_lang_embeddings[task]["vis_emb"]).squeeze(0).float().to(self.device),
+                "lang": torch.from_numpy(self.vis_lang_embeddings[task]["lang_emb"]).squeeze(0).float().to(self.device)}
 
 
 """
