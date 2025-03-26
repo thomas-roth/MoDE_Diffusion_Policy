@@ -529,7 +529,7 @@ class MoDEAgent(pl.LightningModule):
         latent_goal = None
         # last images are the randomly sampled future goal images for models learned with image goals 
         rgb_static = dataset_batch["vis_image"] # [:, :-1]
-        rgb_gripper = dataset_batch["rgb_obs"]['rgb_gripper'] # [:, :-1]
+        rgb_gripper = dataset_batch["rgb_obs"]["rgb_gripper"] # [:, :-1]
 
         if self.use_image_text_not_embedding:
             latent_goal = self.lang_buffer.get_goal_instruction_embeddings(dataset_batch["lang_text"]).to(rgb_static.dtype)
@@ -594,7 +594,7 @@ class MoDEAgent(pl.LightningModule):
         if self.need_precompute_experts_for_inference:
             self.precompute_expert_for_inference(latent_goal)
             self.need_precompute_experts_for_inference = False
-        
+
         perceptual_emb = self.embed_visual_obs(rgb_static, rgb_gripper, latent_goal)
         
         act_seq = self.denoise_actions(

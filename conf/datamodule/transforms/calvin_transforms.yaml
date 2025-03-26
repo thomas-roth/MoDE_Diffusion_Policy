@@ -31,11 +31,8 @@ train:
       std: [0.26862954, 0.26130258, 0.27577711]
   robot_obs:
     - _target_: mode.utils.transforms.NormalizeVector
-
   scene_obs:
     - _target_: mode.utils.transforms.NormalizeVector
-
-
 
 
 val:

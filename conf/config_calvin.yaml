@@ -38,7 +38,7 @@ trainer:
   max_epochs: ${max_epochs}
   sync_batchnorm: True
   accelerator: gpu
-  strategy: "ddp" 
+  strategy: "ddp"
   limit_train_batches: 1.0 # percentage of train data to use
   limit_val_batches: 4
 

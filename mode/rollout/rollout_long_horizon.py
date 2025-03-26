@@ -306,6 +306,7 @@ class RolloutLongHorizon(Callback):
     def rollout(self, vlm_client, model, subtask, record):
         if self.debug:
             print(f"{subtask} ", end="")
+        
         obs = self.env.get_obs()
 
         # get lang goal embedding & annotation text for subtask

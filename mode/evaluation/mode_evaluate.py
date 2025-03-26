@@ -186,7 +186,7 @@ def rollout(env, model, task_oracle, cfg, subtask, lang_embeddings, val_lang_ann
         print(f"{subtask} ", end="")
         time.sleep(0.5)
     obs = env.get_obs()
-    # get vision-language goal embedding for subtask
+    # get lang goal embedding for subtask
     goal = lang_embeddings.get_lang_goal(subtask)
     goal["lang_text"] = val_lang_annotations[subtask][0]
 
@@ -194,7 +194,7 @@ def rollout(env, model, task_oracle, cfg, subtask, lang_embeddings, val_lang_ann
     start_info = env.get_info()
 
     for step in range(cfg.ep_len):
-        action = model.step(obs["rgb_obs"]["rgb_static"], obs["rgb_obs"]["rgb_gripper"], goal)
+        action = model.step(obs, goal)
         obs, _, _, current_info = env.step(action)
         if cfg.debug:
             img = env.render(mode="rgb_array")
