@@ -47,7 +47,7 @@ class AdvancedVisLangEmbeddingBuffer:
             # If an error occurs, encode text batch from scratch
             encoded_texts = self.language_encoder(texts).squeeze(1)
 
-        encoded_vis_batch = self.vision_encoder(images).squeeze(1)
+        encoded_vis_batch = self.vision_encoder(images.squeeze(1).permute(0, 2, 3, 1)).squeeze(1)
 
         encoded_goal = self.goal_projection_layer(x=encoded_vis_batch, condition=encoded_texts, unsqueeze=False)
         return encoded_goal
