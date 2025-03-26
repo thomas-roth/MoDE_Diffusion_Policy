@@ -128,7 +128,7 @@ def get_default_model_and_env(train_folder, dataset_path, checkpoint, env=None, 
     device = torch.device(f"cuda:{device_id}")
 
     if lang_embeddings is None:
-        lang_embeddings = VisLangEmbeddings(dataset.abs_datasets_dir, lang_folder, device=device)
+        lang_embeddings = LangEmbeddings(dataset.abs_datasets_dir, lang_folder, device=device)
 
     if env is None:
         rollout_cfg = OmegaConf.load(Path(__file__).parents[2] / "conf/callbacks/rollout/default.yaml")
@@ -156,7 +156,7 @@ def get_default_model_and_env(train_folder, dataset_path, checkpoint, env=None, 
     return model, env, data_module, lang_embeddings
 
 
-def get_default_mode_and_env(train_folder, dataset_path, checkpoint, env=None, vis_lang_embeddings=None, prep_dm_and_deps=True, device_id=0, eval_cfg_overwrite={}):
+def get_default_mode_and_env(train_folder, dataset_path, checkpoint, env=None, lang_embeddings=None, prep_dm_and_deps=True, device_id=0, eval_cfg_overwrite={}):
     train_cfg_path = Path(train_folder) / checkpoint / ".hydra/config.yaml"
     train_cfg_path = format_sftp_path(train_cfg_path)
     def_cfg = OmegaConf.load(train_cfg_path)
@@ -182,8 +182,8 @@ def get_default_mode_and_env(train_folder, dataset_path, checkpoint, env=None, v
         dataloader = data_module.val_dataloader()
         dataset = dataloader["vis_lang"].dataset
 
-        if vis_lang_embeddings is None:
-            vis_lang_embeddings = VisLangEmbeddings(dataset.abs_datasets_dir, vis_lang_folder, device=device)
+        if lang_embeddings is None:
+            lang_embeddings = LangEmbeddings(dataset.abs_datasets_dir, vis_lang_folder, device=device)
 
         if env is None:
             rollout_cfg = OmegaConf.load(Path(__file__).parents[2] / "conf/callbacks/rollout_lh/calvin.yaml")
@@ -203,7 +203,7 @@ def get_default_mode_and_env(train_folder, dataset_path, checkpoint, env=None, v
     model = model.cuda(device)
     print("Successfully loaded model.")
 
-    return model, env, data_module, vis_lang_embeddings
+    return model, env, data_module, lang_embeddings
 
 def load_mode_from_safetensor(
     filedir: Path,
@@ -248,16 +248,14 @@ def join_vis_lang(img, lang_text):
     plt.show()
 
 
-class VisLangEmbeddings:
+class LangEmbeddings:
     def __init__(self, val_dataset_path, vis_lang_folder, device=torch.device("cuda:0")):
-        self.vis_lang_embeddings = np.load(Path(val_dataset_path) / vis_lang_folder / "validation" / "embeddings.npy", allow_pickle=True).item()
+        self.lang_embeddings = np.load(Path(val_dataset_path) / vis_lang_folder / "validation" / "embeddings.npy", allow_pickle=True).item()
         self.device = device
 
-    def get_vis_lang_goal(self, task):
-        return {"vis_image": torch.from_numpy(self.vis_lang_embeddings[task]["vis_ann"]).squeeze(0).float().to(self.device),
-                "lang_text": self.vis_lang_embeddings[task]["lang_ann"][0],
-                "vis": torch.from_numpy(self.vis_lang_embeddings[task]["vis_emb"]).squeeze(0).float().to(self.device),
-                "lang": torch.from_numpy(self.vis_lang_embeddings[task]["lang_emb"]).squeeze(0).float().to(self.device)}
+    def get_lang_goal(self, task):
+        return {"lang_text": self.lang_embeddings[task]["ann"][0],
+                "lang": torch.from_numpy(self.lang_embeddings[task]["emb"]).squeeze(0).float().to(self.device)}
 
 
 """

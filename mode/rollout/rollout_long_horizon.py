@@ -3,6 +3,8 @@ from itertools import chain
 import logging
 import multiprocessing
 import os
+from pathlib import Path
+import sys
 from typing import Any
 
 import hydra
@@ -13,8 +15,10 @@ import torch
 import torch.distributed as dist
 from tqdm import tqdm
 
+sys.path.append(str(Path(__file__).absolute().parents[5]))
+from iTRAP.evaluation.utils import setup_vlm_client, query_vlm, build_trajectory_image
 from mode.evaluation.multistep_sequences import get_sequences
-from mode.evaluation.utils import get_env_state_for_initial_condition, join_vis_lang, VisLangEmbeddings
+from mode.evaluation.utils import get_env_state_for_initial_condition, join_vis_lang, LangEmbeddings
 from mode.rollout.rollout_video import RolloutVideo
 from mode.models.mode_agent import MoDEAgent
 
@@ -133,7 +137,7 @@ class RolloutLongHorizon(Callback):
         self.rollout_video = None  # type: Any
         self.empty_cache = empty_cache
         self.device = None  # type: Any
-        self.vis_lang_embeddings = None
+        self.lang_embeddings = None
         self.vis_lang_folder = vis_lang_folder
         self.eval_sequences = None
         self.val_annotations = val_annotations
@@ -191,7 +195,7 @@ class RolloutLongHorizon(Callback):
                     )
 
                 # Initialize language embeddings with the dataset
-                self.vis_lang_embeddings = VisLangEmbeddings(
+                self.lang_embeddings = LangEmbeddings(
                     dataset.abs_datasets_dir, 
                     dataset.vis_lang_folder, 
                     device=pl_module.device
@@ -259,21 +263,23 @@ class RolloutLongHorizon(Callback):
         )
 
     def evaluate_policy(self, model):
+        vlm_client = setup_vlm_client()
+
         results = []
         total_evaluations = len(self.eval_sequences)
         local_rank = int(dist.get_rank()) if (dist.is_available() and dist.is_initialized()) else 0
         for i, (initial_state, eval_sequence) in enumerate(
                 tqdm(self.eval_sequences,
-                     desc=f"Evaluating Policy(rank={local_rank})",
+                     desc=f"Evaluating Policy (rank={local_rank})",
                      total=total_evaluations, position=local_rank)):
             record = i < self.num_videos
-            result = self.evaluate_sequence(model, initial_state, eval_sequence, record, i)
+            result = self.evaluate_sequence(vlm_client, model, initial_state, eval_sequence, record, i)
             results.append(result)
             if record:
                 self.rollout_video.write_to_tmp()
         return results
 
-    def evaluate_sequence(self, model, initial_state, eval_sequence, record, i):
+    def evaluate_sequence(self, vlm_client, model, initial_state, eval_sequence, record, i):
         robot_obs, scene_obs = get_env_state_for_initial_condition(initial_state)
         self.env.reset(robot_obs=robot_obs, scene_obs=scene_obs)
         if record:
@@ -288,7 +294,7 @@ class RolloutLongHorizon(Callback):
         for subtask in eval_sequence:
             if record:
                 self.rollout_video.new_subtask()
-            success = self.rollout(model, subtask, record)
+            success = self.rollout(vlm_client, model, subtask, record)
             if record:
                 self.rollout_video.draw_outcome(success)
             if success:
@@ -297,35 +303,39 @@ class RolloutLongHorizon(Callback):
                 return success_counter
         return success_counter
 
-    def rollout(self, model, subtask, record):
+    def rollout(self, vlm_client, model, subtask, record):
         if self.debug:
             print(f"{subtask} ", end="")
         obs = self.env.get_obs()
 
-        # get lang annotation for subtask
-        lang_annotation = self.val_annotations[subtask][0]
+        # get lang goal embedding & annotation  text for subtask
+        goal = self.lang_embeddings.get_lang_goal(subtask)
+        goal["lang_text"] = self.val_annotations[subtask][0]
 
-        # get vision-language goal embedding
-        goal = self.vis_lang_embeddings.get_vis_lang_goal(subtask)
-        goal["lang_text"] = lang_annotation
+        # get trajectory image (untransformed bc using render() instead of get_obs())
+        untransformed_goal_img = self.env.cameras[0].render()[0].squeeze()
+        response = query_vlm(untransformed_goal_img, vlm_client, subtask)
+        untransformed_traj_goal_img = build_trajectory_image(untransformed_goal_img, response, save_traj_imgs=False)
 
         # apply transforms to trajectory goal image
-        transformed_traj_goal_img = torch.tensor(goal["vis_image"]).permute(2, 0, 1).unsqueeze(0)
+        transformed_traj_goal_img = torch.tensor(untransformed_traj_goal_img).permute(2, 0, 1).unsqueeze(0)
         for val_transform in self.val_transforms:
             transformed_traj_goal_img = val_transform(transformed_traj_goal_img)
         goal["vis_image"] = transformed_traj_goal_img.unsqueeze(0).to(self.device)
 
         model.reset()
         start_info = self.env.get_info()
+
+        local_rank = int(dist.get_rank()) if (dist.is_available() and dist.is_initialized()) else 0
         
         success = False
-        for step in range(self.ep_len):
+        for step in tqdm(range(self.ep_len), total=self.ep_len, desc=f"Rolling out policy for {subtask} (rank={local_rank})", leave=False):
             action = model.step(obs, goal)
             # print(action.shape)
             obs, _, _, current_info = self.env.step(action)
             if self.debug and os.environ.get("DISPLAY") is not None:
                 img = self.env.render(mode="rgb_array")
-                join_vis_lang(img, lang_annotation)
+                join_vis_lang(img, goal["lang_text"])
             if record:
                 # update video
                 self.rollout_video.update(obs["rgb_obs"]["rgb_static"])
@@ -340,5 +350,5 @@ class RolloutLongHorizon(Callback):
             else:
                 print(colored("fail", "red"), end=" ")
         if record:
-            self.rollout_video.add_language_instruction(lang_annotation)
+            self.rollout_video.add_language_instruction(goal["lang_text"])
         return success

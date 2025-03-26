@@ -2,6 +2,8 @@ import torch
 import torch.nn as nn
 from timm import create_model
 
+
+
 class FiLMLayer(nn.Module):
     def __init__(self, num_features, condition_dim):
         super(FiLMLayer, self).__init__()
@@ -17,10 +19,8 @@ class FiLMLayer(nn.Module):
         nn.init.zeros_(self.beta.bias)
 
     def forward(self, x, condition, unsqueeze=True):
-        self.gamma.to(condition.device)
-        self.beta.to(condition.device)
-        self.gamma.to(condition.dtype)
-        self.beta.to(condition.dtype)
+        self.gamma.to(device=condition.device, dtype=condition.dtype)
+        self.beta.to(device=condition.device, dtype=condition.dtype)
 
         gamma = self.gamma(condition)
         beta = self.beta(condition)
@@ -32,11 +32,14 @@ class FiLMLayer(nn.Module):
         x = (1 + gamma) * x + beta  # Using (1 + gamma) to start with identity transform
         return x.contiguous()
 
+
 class FiLMResNet50Policy(nn.Module):
     def __init__(self, condition_dim):
         super(FiLMResNet50Policy, self).__init__()
         # Load pretrained ResNet50 with weights from ImageNet-1K
         self.resnet = create_model('resnet50', pretrained=True, num_classes=0)
+
+        self.model_name = "FiLMResNet50"
         
         # Add FiLM layers after each residual block
         self.film1 = FiLMLayer(256, condition_dim)
@@ -80,6 +83,8 @@ class FiLMResNet34Policy(nn.Module):
         super(FiLMResNet34Policy, self).__init__()
         # Load pretrained ResNet34 with weights from ImageNet-1K
         self.resnet = create_model('resnet34', pretrained=True, num_classes=0)
+
+        self.model_name = "FiLMResNet34"
         
         # Add FiLM layers after each residual block
         self.film1 = FiLMLayer(64, condition_dim)
@@ -90,10 +95,15 @@ class FiLMResNet34Policy(nn.Module):
     def forward(self, x, condition):
         if len(condition.shape) == 3:
             condition = condition.squeeze(1)
+
+        x = x.to(self.resnet.conv1.weight.dtype)
+
         x = self.resnet.conv1(x)
         x = self.resnet.bn1(x)
         x = self.resnet.act1(x)
         x = self.resnet.maxpool(x)
+
+        condition = condition.to(x.dtype)
 
         x = self.resnet.layer1(x)
         x = self.film1(x, condition)
@@ -113,12 +123,13 @@ class FiLMResNet34Policy(nn.Module):
         return x  # Return the latent features directly
 
 
-
 class FiLMResNet18Policy(nn.Module):
     def __init__(self, condition_dim):
         super(FiLMResNet18Policy, self).__init__()
         # Load pretrained ResNet18 with weights from ImageNet-1K
         self.resnet = create_model('resnet18', pretrained=True, num_classes=0)
+
+        self.model_name = "FiLMResNet18"
         
         # Add FiLM layers after each residual block
         # ResNet18 has the same channel dimensions as ResNet34
@@ -130,10 +141,15 @@ class FiLMResNet18Policy(nn.Module):
     def forward(self, x, condition):
         if len(condition.shape) == 3:
             condition = condition.squeeze(1)
+
+        x = x.to(self.resnet.conv1.weight.dtype)
+
         x = self.resnet.conv1(x)
         x = self.resnet.bn1(x)
         x = self.resnet.act1(x)
         x = self.resnet.maxpool(x)
+
+        condition = condition.to(x.dtype)
 
         x = self.resnet.layer1(x)
         x = self.film1(x, condition)

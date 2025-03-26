@@ -11,6 +11,8 @@ class VisClip(nn.Module):
         super(VisClip, self).__init__()
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
 
+        self.model_name = f"CLIP_{model_name}"
+
         # Load CLIP model
         print(f"loading vision CLIP model with backbone: {model_name}")
         self._load_clip(model_name)

@@ -187,10 +187,8 @@ def rollout(env, model, task_oracle, cfg, subtask, vis_lang_embeddings, val_lang
         time.sleep(0.5)
     obs = env.get_obs()
     # get vision-language goal embedding for subtask
-    goal = {}
-    goal["vis_image"] = vis_lang_embeddings.get_vis_lang_goal(subtask)["vis_ann"]
-    goal["lang_text"] = vis_lang_embeddings.get_vis_lang_goal(subtask)["lang_ann"][0]
-    lang_annotation_sentence = val_lang_annotations[subtask][0]
+    goal = vis_lang_embeddings.get_vis_lang_goal(subtask)
+    goal["lang_text"] = val_lang_annotations[subtask][0]
 
     model.reset()
     start_info = env.get_info()
@@ -200,7 +198,7 @@ def rollout(env, model, task_oracle, cfg, subtask, vis_lang_embeddings, val_lang
         obs, _, _, current_info = env.step(action)
         if cfg.debug:
             img = env.render(mode="rgb_array")
-            join_vis_lang(img, lang_annotation_sentence)
+            join_vis_lang(img, goal["lang_text"])
             # time.sleep(0.1)
         if record:
             # update video
@@ -211,12 +209,12 @@ def rollout(env, model, task_oracle, cfg, subtask, vis_lang_embeddings, val_lang
             if cfg.debug:
                 print(colored("success", "green"), end=" ")
             if record:
-                rollout_video.add_language_instruction(lang_annotation_sentence)
+                rollout_video.add_language_instruction(goal["lang_text"])
             return True
     if cfg.debug:
         print(colored("fail", "red"), end=" ")
     if record:
-        rollout_video.add_language_instruction(lang_annotation_sentence)
+        rollout_video.add_language_instruction(goal["lang_text"])
     return False
 
 
@@ -238,7 +236,7 @@ def main(cfg):
         cfg.dataset_path,
         cfg.checkpoint,
         env=env,
-        vis_lang_embeddings=vis_lang_embeddings,
+        lang_embeddings=vis_lang_embeddings,
         eval_cfg_overwrite=cfg.eval_cfg_overwrite,
         device_id=cfg.device,
     )
