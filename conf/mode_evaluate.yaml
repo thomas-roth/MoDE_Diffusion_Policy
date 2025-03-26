@@ -6,7 +6,7 @@ eval_cfg_overwrite:
   model:
     num_sampling_steps: 5
 
-train_folder: /home/troth/bt/iTRAP/iTRAP/models/MoDE_Diffusion_Policy/pretrained/MoDE_CALVIN_D
+train_folder: /home/troth/bt/iTRAP/iTRAP/models/MoDE_Diffusion_Policy/pretrained/MoDE_Pretrained
 checkpoint: traj-goal_film-resnet_epoch=13_eval_lh #d_ema=0
 device: 0
 

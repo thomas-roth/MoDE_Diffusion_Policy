@@ -324,7 +324,7 @@ class RolloutLongHorizon(Callback):
             transformed_static_traj_img = val_transform(transformed_static_traj_img)
         
         # add trajectory image to goal
-        goal["vis_image"] = transformed_static_traj_img.to(obs["rgb_obs"]["rgb_static"].device)
+        goal["vis_image"] = transformed_static_traj_img.unsqueeze(0).to(self.device)
 
         model.reset()
         start_info = self.env.get_info()

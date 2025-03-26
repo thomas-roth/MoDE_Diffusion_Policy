@@ -15,7 +15,7 @@ log_dir: ./logs
 slurm: false
 seed: 242
 device: 'cuda'
-batch_size: 256 #16 #64 # 38 # 128
+batch_size: 256 #64 # 38 # 128
 devices: 2
 act_dim: 7
 proprio_dims: 7
