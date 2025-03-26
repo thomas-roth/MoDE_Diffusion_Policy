@@ -21,7 +21,7 @@ class AdvancedVisLangEmbeddingBuffer:
         self.buffer_lock = threading.Lock()
         self.logger = logging.getLogger(__name__)
 
-        self.goal_projection_layer = FiLMLayer(condition_dim=self.language_encoder.output_dim, num_features=512)
+        self.goal_projection_layer = FiLMLayer(condition_dim=self.language_encoder.output_dim, num_features=512, device=vision_encoder.device)
 
 
     def get_or_encode_vis_lang_batch(self, images: torch.Tensor, texts: list):

@@ -5,12 +5,12 @@ from timm import create_model
 
 
 class FiLMLayer(nn.Module):
-    def __init__(self, num_features, condition_dim):
+    def __init__(self, num_features, condition_dim, device='cuda'):
         super(FiLMLayer, self).__init__()
         self.num_features = num_features
         self.condition_dim = condition_dim
-        self.gamma = nn.Linear(condition_dim, num_features)
-        self.beta = nn.Linear(condition_dim, num_features)
+        self.gamma = nn.Linear(condition_dim, num_features, device=device)
+        self.beta = nn.Linear(condition_dim, num_features, device=device)
         
         # Zero initialization
         nn.init.zeros_(self.gamma.weight)
@@ -19,8 +19,10 @@ class FiLMLayer(nn.Module):
         nn.init.zeros_(self.beta.bias)
 
     def forward(self, x, condition, unsqueeze=True):
-        self.gamma.to(device=condition.device, dtype=condition.dtype)
-        self.beta.to(device=condition.device, dtype=condition.dtype)
+        if self.gamma.weight.device != condition.device:
+            self.gamma = self.gamma.to(condition.device)
+        if self.beta.weight.device != condition.device:
+            self.beta = self.beta.to(condition.device)
 
         gamma = self.gamma(condition)
         beta = self.beta(condition)
