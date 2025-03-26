@@ -313,21 +313,23 @@ class RolloutLongHorizon(Callback):
         goal["lang_text"] = self.val_annotations[subtask][0]
 
         # get trajectory image (untransformed bc using render() instead of get_obs())
-        untransformed_goal_img = self.env.cameras[0].render()[0].squeeze()
-        response = query_vlm(untransformed_goal_img, vlm_client, subtask)
-        untransformed_traj_goal_img = build_trajectory_image(untransformed_goal_img, response, save_traj_imgs=False)
+        untransformed_static_img = self.env.cameras[0].render()[0].squeeze()
+        response = query_vlm(untransformed_static_img, vlm_client, subtask)
+        untransformed_static_traj_img = build_trajectory_image(untransformed_static_img, response, save_traj_imgs=False)
 
-        # apply transforms to trajectory goal image
-        transformed_traj_goal_img = torch.tensor(untransformed_traj_goal_img).permute(2, 0, 1).unsqueeze(0)
+        # apply transforms to trajectory image
+        transformed_traj_goal_img = torch.tensor(untransformed_static_traj_img).permute(2, 0, 1).unsqueeze(0) # (H, W, C) -> (C, H, W)
         for val_transform in self.val_transforms:
             transformed_traj_goal_img = val_transform(transformed_traj_goal_img)
+        
+        # add trajectory image to goal
         goal["vis_image"] = transformed_traj_goal_img.unsqueeze(0).to(self.device)
 
         model.reset()
         start_info = self.env.get_info()
 
         local_rank = int(dist.get_rank()) if (dist.is_available() and dist.is_initialized()) else 0
-        
+
         success = False
         for step in tqdm(range(self.ep_len), total=self.ep_len, desc=f"Rolling out policy for {subtask} (rank={local_rank})", leave=False):
             action = model.step(obs, goal)

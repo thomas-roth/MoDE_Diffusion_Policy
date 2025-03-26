@@ -148,8 +148,8 @@ def process_vision_language(episode: Dict[str, np.ndarray], transforms: Dict, wi
     seq_vis_lang = {"vis": torch.empty(0), "vis_image": torch.empty(0), "lang": torch.empty(0), "lang_text": ""}
     if with_vis_lang:
         vis_image = torch.from_numpy(episode["vision_image"]).float().permute(0, 3, 1, 2) # (B, H, W, C) -> (B, C, H, W)
-        if "rgb_traj_goal" in transforms:
-            vis_image = transforms["rgb_traj_goal"](vis_image)
+        if "rgb_static_traj" in transforms:
+            vis_image = transforms["rgb_static_traj"](vis_image)
         seq_vis_lang["vis"] = episode["vision"]
         seq_vis_lang["vis_image"] = vis_image
 
