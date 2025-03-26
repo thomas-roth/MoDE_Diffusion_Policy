@@ -309,7 +309,7 @@ class RolloutLongHorizon(Callback):
 
         obs = self.env.get_obs()
 
-        # get lang goal embedding & annotation for subtask
+        # get lang goal embedding & annotation text for subtask
         goal = self.lang_embeddings.get_lang_goal(subtask)
         goal["lang_text"] = self.val_annotations[subtask][0]
 
