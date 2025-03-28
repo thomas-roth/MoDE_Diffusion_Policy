@@ -11,7 +11,7 @@ num_sequences: 100 #1000 # 128
 replan_freq: 30
 ep_len: 360
 empty_cache: false
-log_video_to_file: true
+log_video_to_file: false
 num_videos: ${.num_sequences} # dot to enable referencing to same config file
 save_dir: ./rollout_videos
 vis_lang_folder: ${vis_lang_folder}
