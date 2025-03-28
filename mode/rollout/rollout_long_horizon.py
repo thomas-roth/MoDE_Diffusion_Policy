@@ -239,7 +239,7 @@ class RolloutLongHorizon(Callback):
                 log_rank_0(f"{i} / 5 subtasks: {n_success} / {len(results)} sequences, SR: {sr * 100:.1f}%")
             avg_seq_len = np.mean(results)
             pl_module.log("eval_lh/avg_seq_len", torch.tensor(avg_seq_len), on_epoch=True, sync_dist=True)
-            log_rank_0(f"Average successful sequence length: {avg_seq_len:.1f}")
+            log_rank_0(f"Average successful sequence length: {avg_seq_len:.2f}")
             print()
 
             if isinstance(pl_module, MoDEAgent):
@@ -268,33 +268,31 @@ class RolloutLongHorizon(Callback):
         results = []
         total_evaluations = len(self.eval_sequences)
         local_rank = int(dist.get_rank()) if (dist.is_available() and dist.is_initialized()) else 0
-        for i, (initial_state, eval_sequence) in enumerate(
-                tqdm(self.eval_sequences,
-                     desc=f"Evaluating Policy (rank={local_rank})",
-                     total=total_evaluations, position=local_rank)):
-            record = i < self.num_videos
-            result = self.evaluate_sequence(vlm_client, model, initial_state, eval_sequence, record, i)
+        for seq_nr, (initial_state, eval_sequence) in enumerate(
+                tqdm(self.eval_sequences, desc=f"Evaluating Policy (rank={local_rank})", total=total_evaluations, position=local_rank)):
+            record = seq_nr < self.num_videos
+            result = self.evaluate_sequence(vlm_client, model, initial_state, eval_sequence, seq_nr, record)
             results.append(result)
             if record:
                 self.rollout_video.write_to_tmp()
         return results
 
-    def evaluate_sequence(self, vlm_client, model, initial_state, eval_sequence, record, i):
+    def evaluate_sequence(self, vlm_client, model, initial_state, eval_sequence, seq_nr, record):
         robot_obs, scene_obs = get_env_state_for_initial_condition(initial_state)
         self.env.reset(robot_obs=robot_obs, scene_obs=scene_obs)
         if record:
             caption = " | ".join(eval_sequence)
-            self.rollout_video.new_video(tag=get_video_tag(i), caption=caption)
+            self.rollout_video.new_video(tag=get_video_tag(seq_nr), caption=caption)
         success_counter = 0
         if self.debug:
             print()
             print()
             print(f"Evaluating sequence: {' -> '.join(eval_sequence)}")
             print("Subtask: ", end="")
-        for subtask in eval_sequence:
+        for subtask_nr, subtask in enumerate(eval_sequence):
             if record:
                 self.rollout_video.new_subtask()
-            success = self.rollout(vlm_client, model, subtask, record)
+            success = self.rollout(vlm_client, model, subtask, seq_nr, subtask_nr, record)
             if record:
                 self.rollout_video.draw_outcome(success)
             if success:
@@ -303,7 +301,7 @@ class RolloutLongHorizon(Callback):
                 return success_counter
         return success_counter
 
-    def rollout(self, vlm_client, model, subtask, record):
+    def rollout(self, vlm_client, model, subtask, seq_nr, subtask_nr, record):
         if self.debug:
             print(f"{subtask} ", end="")
         
@@ -316,7 +314,7 @@ class RolloutLongHorizon(Callback):
         # get trajectory points & actions from initial state of scene & robot (static camera image untransformed as render() used instead of get_obs())
         untransformed_static_img = self.env.cameras[0].render()[0].squeeze()
         vlm_response = query_vlm(untransformed_static_img, vlm_client, subtask)
-        traj_gripper_points, traj_gripper_actions = extract_gripper_points_and_actions(vlm_response)
+        traj_gripper_points, traj_gripper_actions = extract_gripper_points_and_actions(vlm_response, error_logger=log_print)
 
         model.reset()
         start_info = self.env.get_info()
@@ -329,7 +327,7 @@ class RolloutLongHorizon(Callback):
                 # model predicts multistep actions per step => only draw trajectory once per multistep
                 untransformed_static_img = self.env.cameras[0].render()[0].squeeze()
                 untransformed_static_traj_img = draw_trajectory_onto_image(untransformed_static_img, traj_gripper_points, traj_gripper_actions)
-                #save_trajectory_image(untransformed_static_traj_img, task_nr=step, task=subtask)
+                #save_trajectory_image(untransformed_static_traj_img, subtask, local_rank, seq_nr, subtask_nr, step)
                 
                 # apply transforms to trajectory image
                 transformed_static_traj_img = torch.tensor(untransformed_static_traj_img).permute(2, 0, 1).unsqueeze(0)
