@@ -16,7 +16,7 @@ import torch.distributed as dist
 from tqdm import tqdm
 
 sys.path.append(str(Path(__file__).absolute().parents[5]))
-from iTRAP.evaluation.utils import setup_vlm_client, query_vlm, build_trajectory_image
+from iTRAP.evaluation.utils import setup_vlm_client, query_vlm, extract_gripper_points_and_actions, draw_trajectory_onto_image, save_trajectory_image
 from mode.evaluation.multistep_sequences import get_sequences
 from mode.evaluation.utils import get_env_state_for_initial_condition, join_vis_lang, LangEmbeddings
 from mode.rollout.rollout_video import RolloutVideo
@@ -313,6 +313,11 @@ class RolloutLongHorizon(Callback):
         goal = self.lang_embeddings.get_lang_goal(subtask)
         goal["lang_text"] = self.val_annotations[subtask][0]
 
+        # get trajectory points & actions from initial state of scene & robot (static camera image untransformed as render() used instead of get_obs())
+        untransformed_static_img = self.env.cameras[0].render()[0].squeeze()
+        vlm_response = query_vlm(untransformed_static_img, vlm_client, subtask)
+        traj_gripper_points, traj_gripper_actions = extract_gripper_points_and_actions(vlm_response)
+
         model.reset()
         start_info = self.env.get_info()
 
@@ -321,11 +326,10 @@ class RolloutLongHorizon(Callback):
         success = False
         for step in tqdm(range(self.ep_len), total=self.ep_len, desc=f"Rolling out policy for {subtask} (rank={local_rank})", leave=False):
             if step % model.multistep == 0:
-                # model predicts multistep actions per step => only query vlm every multistep steps
-                # get trajectory image (untransformed bc using render() instead of get_obs())
+                # model predicts multistep actions per step => only draw trajectory once per multistep
                 untransformed_static_img = self.env.cameras[0].render()[0].squeeze()
-                response = query_vlm(untransformed_static_img, vlm_client, subtask)
-                untransformed_static_traj_img = build_trajectory_image(untransformed_static_img, response, save_traj_imgs=False, thickness=5)
+                untransformed_static_traj_img = draw_trajectory_onto_image(untransformed_static_img, traj_gripper_points, traj_gripper_actions)
+                #save_trajectory_image(untransformed_static_traj_img, task_nr=step, task=subtask)
                 
                 # apply transforms to trajectory image
                 transformed_static_traj_img = torch.tensor(untransformed_static_traj_img).permute(2, 0, 1).unsqueeze(0)
