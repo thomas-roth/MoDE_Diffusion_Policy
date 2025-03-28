@@ -94,12 +94,6 @@ def gather_results(local_results):
     return list(chain(*results))
 
 
-def get_video_tag(i):
-    if dist.is_available() and dist.is_initialized():
-        i = i * dist.get_world_size() + dist.get_rank()
-    return f"_long_horizon/sequence_{i}"
-
-
 class RolloutLongHorizon(Callback):
     """
     A class for performing rollouts during validation step.
@@ -274,7 +268,8 @@ class RolloutLongHorizon(Callback):
             result = self.evaluate_sequence(vlm_client, model, initial_state, eval_sequence, seq_nr, record)
             results.append(result)
             if record:
-                self.rollout_video.write_to_tmp()
+                global_step = 504 * model.current_epoch # 504 steps per epoch with current setup
+                self.rollout_video.log(global_step)
         return results
 
     def evaluate_sequence(self, vlm_client, model, initial_state, eval_sequence, seq_nr, record):
@@ -282,7 +277,7 @@ class RolloutLongHorizon(Callback):
         self.env.reset(robot_obs=robot_obs, scene_obs=scene_obs)
         if record:
             caption = " | ".join(eval_sequence)
-            self.rollout_video.new_video(tag=get_video_tag(seq_nr), caption=caption)
+            self.rollout_video.new_video(tag=self.get_video_tag(seq_nr), caption=caption)
         success_counter = 0
         if self.debug:
             print()
@@ -343,7 +338,8 @@ class RolloutLongHorizon(Callback):
                 join_vis_lang(img, goal["lang_text"])
             if record:
                 # update video
-                self.rollout_video.update(obs["rgb_obs"]["rgb_static"])
+                normalized_rgb_static = self.env.cameras[0].render()[0] / 127.5 - 1 # normalize to [-1, 1]
+                self.rollout_video.update(torch.tensor(normalized_rgb_static).permute(2, 0, 1).unsqueeze(0).unsqueeze(1).to(self.device))
             # check if current step solves a task
             current_task_info = self.task_checker.get_task_info_for_set(start_info, current_info, {subtask})
             if len(current_task_info) > 0:
@@ -357,3 +353,9 @@ class RolloutLongHorizon(Callback):
         if record:
             self.rollout_video.add_language_instruction(goal["lang_text"])
         return success
+    
+    def get_video_tag(self, seq_nr):
+        if dist.is_available() and dist.is_initialized():
+            seq_nr = seq_nr * dist.get_world_size() + dist.get_rank()
+        num_digits = len(str(len(self.eval_sequences)))
+        return f"long_horizon_seq-{seq_nr:0{num_digits}d}_global-step" # global step number appended during saving

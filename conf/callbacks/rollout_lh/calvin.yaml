@@ -7,12 +7,12 @@ env_cfg:
   _target_: mode.wrappers.hulc_wrapper.HulcWrapper
 skip_epochs: ${rollout_lh_skip_epochs}
 rollout_freq: 2 #5
-num_videos: 0
 num_sequences: 100 #1000 # 128
 replan_freq: 30
-ep_len: 150 #360 #TODO?: change back if time not an issue
+ep_len: 360
 empty_cache: false
-log_video_to_file: False
-save_dir: ./videos
+log_video_to_file: true
+num_videos: ${.num_sequences} # dot to enable referencing to same config file
+save_dir: ./rollout_videos
 vis_lang_folder: ${vis_lang_folder}
 debug: false
