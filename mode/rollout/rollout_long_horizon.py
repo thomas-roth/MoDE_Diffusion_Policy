@@ -320,7 +320,7 @@ class RolloutLongHorizon(Callback):
 
         black_img = np.zeros_like(untransformed_static_img)
         untransformed_black_traj_img = draw_trajectory_onto_image(black_img, traj_gripper_points, traj_gripper_actions)
-        save_trajectory_image(untransformed_black_traj_img, subtask, local_rank, seq_nr, subtask_nr, 0)
+        #save_trajectory_image(untransformed_black_traj_img, subtask, local_rank, seq_nr, subtask_nr, 0)
 
         # don't transform trajectory image as clip vis encoder has its own transforms
         
