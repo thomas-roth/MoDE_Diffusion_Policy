@@ -16,7 +16,7 @@ import torch.distributed as dist
 from tqdm import tqdm
 
 sys.path.append(str(Path(__file__).absolute().parents[5]))
-from iTRAP.evaluation.utils import setup_vlm_client, query_vlm, build_trajectory_image
+from iTRAP.evaluation.utils import save_trajectory_image, setup_vlm_client, query_vlm, extract_gripper_points_and_actions, draw_trajectory_onto_image
 from mode.evaluation.multistep_sequences import get_sequences
 from mode.evaluation.utils import get_env_state_for_initial_condition, join_vis_lang, LangEmbeddings
 from mode.rollout.rollout_video import RolloutVideo
@@ -92,12 +92,6 @@ def gather_results(local_results):
     results = [None for _ in range(torch.distributed.get_world_size())]
     torch.distributed.all_gather_object(results, local_results)
     return list(chain(*results))
-
-
-def get_video_tag(i):
-    if dist.is_available() and dist.is_initialized():
-        i = i * dist.get_world_size() + dist.get_rank()
-    return f"_long_horizon/sequence_{i}"
 
 
 class RolloutLongHorizon(Callback):
@@ -233,7 +227,7 @@ class RolloutLongHorizon(Callback):
                 log_rank_0(f"{i} / 5 subtasks: {n_success} / {len(results)} sequences, SR: {sr * 100:.1f}%")
             avg_seq_len = np.mean(results)
             pl_module.log("eval_lh/avg_seq_len", torch.tensor(avg_seq_len), on_epoch=True, sync_dist=True)
-            log_rank_0(f"Average successful sequence length: {avg_seq_len:.1f}")
+            log_rank_0(f"Average successful sequence length: {avg_seq_len:.2f}")
             print()
 
             if isinstance(pl_module, MoDEAgent):
@@ -262,88 +256,125 @@ class RolloutLongHorizon(Callback):
         results = []
         total_evaluations = len(self.eval_sequences)
         local_rank = int(dist.get_rank()) if (dist.is_available() and dist.is_initialized()) else 0
-        for i, (initial_state, eval_sequence) in enumerate(
-                tqdm(self.eval_sequences,
-                     desc=f"Evaluating Policy (rank={local_rank})",
-                     total=total_evaluations, position=local_rank)):
-            record = i < self.num_videos
-            result = self.evaluate_sequence(vlm_client, model, initial_state, eval_sequence, record, i)
+        for seq_nr, (initial_state, eval_sequence) in enumerate(tqdm(self.eval_sequences, desc=f"Evaluating Policy (rank={local_rank})",
+                                                                total=total_evaluations, position=local_rank)):
+            record = seq_nr < self.num_videos
+
+            result = self.evaluate_sequence(vlm_client, model, initial_state, eval_sequence, seq_nr, record)
+
             results.append(result)
+            
             if record:
-                self.rollout_video.write_to_tmp()
+                global_step = 504 * model.current_epoch # 504 steps per epoch with current setup
+                self.rollout_video.log(global_step)
+        
         return results
 
-    def evaluate_sequence(self, vlm_client, model, initial_state, eval_sequence, record, i):
+    def evaluate_sequence(self, vlm_client, model, initial_state, eval_sequence, seq_nr, record):
         robot_obs, scene_obs = get_env_state_for_initial_condition(initial_state)
         self.env.reset(robot_obs=robot_obs, scene_obs=scene_obs)
+
         if record:
             caption = " | ".join(eval_sequence)
-            self.rollout_video.new_video(tag=get_video_tag(i), caption=caption)
-        success_counter = 0
+            self.rollout_video.new_video(tag=self.get_video_tag(seq_nr), caption=caption)
+
         if self.debug:
             print()
             print()
             print(f"Evaluating sequence: {' -> '.join(eval_sequence)}")
             print("Subtask: ", end="")
-        for subtask in eval_sequence:
+
+        success_counter = 0
+        for subtask_nr, subtask in enumerate(eval_sequence):
             if record:
                 self.rollout_video.new_subtask()
-            success = self.rollout(vlm_client, model, subtask, record)
+
+            success = self.rollout(vlm_client, model, subtask, seq_nr, subtask_nr, record)
+
             if record:
                 self.rollout_video.draw_outcome(success)
+
             if success:
                 success_counter += 1
             else:
                 return success_counter
+
         return success_counter
 
-    def rollout(self, vlm_client, model, subtask, record):
+    def rollout(self, vlm_client, model, subtask, seq_nr, subtask_nr, record):
         if self.debug:
             print(f"{subtask} ", end="")
 
         obs = self.env.get_obs()
 
+        local_rank = int(dist.get_rank()) if (dist.is_available() and dist.is_initialized()) else 0
+
         # get lang goal embedding & annotation text for subtask
         goal = self.lang_embeddings.get_lang_goal(subtask)
         goal["lang_text"] = self.val_annotations[subtask][0]
 
-        # get trajectory image (untransformed bc using render() instead of get_obs())
+        # get trajectory points & actions (untransformed bc using render() instead of get_obs())
         untransformed_static_img = self.env.cameras[0].render()[0].squeeze()
-        response = query_vlm(untransformed_static_img, vlm_client, subtask)
-        untransformed_static_traj_img = build_trajectory_image(untransformed_static_img, response, save_traj_imgs=False)
+        vlm_response = query_vlm(untransformed_static_img, vlm_client, subtask)
+        traj_gripper_points, traj_gripper_actions = extract_gripper_points_and_actions(vlm_response, error_log=log_print)
+
+        black_img = np.zeros_like(untransformed_static_img)
+        untransformed_black_traj_img = draw_trajectory_onto_image(black_img, traj_gripper_points, traj_gripper_actions)
+        save_trajectory_image(untransformed_black_traj_img, subtask, local_rank, seq_nr, subtask_nr, 0)
 
         # don't transform trajectory image as clip vis encoder has its own transforms
         
         # add trajectory image to goal
-        untransformed_static_traj_img = torch.tensor(untransformed_static_traj_img).permute(2, 0, 1).unsqueeze(0) # (H, W, C) -> (C, H, W)
-        goal["vis_image"] = untransformed_static_traj_img.to(self.device)
+        untransformed_black_traj_img = torch.tensor(untransformed_black_traj_img).permute(2, 0, 1).unsqueeze(0) # (H, W, C) -> (C, H, W)
+        goal["vis_image"] = untransformed_black_traj_img.to(self.device)
 
         model.reset()
         start_info = self.env.get_info()
 
-        local_rank = int(dist.get_rank()) if (dist.is_available() and dist.is_initialized()) else 0
+        if record:
+            # update video with initial state
+            static_traj_img = draw_trajectory_onto_image(untransformed_static_img, traj_gripper_points, traj_gripper_actions)
+            normalized_static_traj_img = static_traj_img / 127.5 - 1 # normalize to [-1, 1]
+            self.rollout_video.update(torch.tensor(normalized_static_traj_img).permute(2, 0, 1).unsqueeze(0).unsqueeze(1).to(self.device))
 
         success = False
         for step in tqdm(range(self.ep_len), total=self.ep_len, desc=f"Rolling out policy for {subtask} (rank={local_rank})", leave=False):
             action = model.step(obs, goal)
             # print(action.shape)
+
             obs, _, _, current_info = self.env.step(action)
+
             if self.debug and os.environ.get("DISPLAY") is not None:
                 img = self.env.render(mode="rgb_array")
                 join_vis_lang(img, goal["lang_text"])
+
             if record:
                 # update video
-                self.rollout_video.update(obs["rgb_obs"]["rgb_static"])
+                static_img = self.env.cameras[0].render()[0].squeeze()
+                static_traj_img = draw_trajectory_onto_image(static_img, traj_gripper_points, traj_gripper_actions)
+                normalized_static_traj_img = static_traj_img / 127.5 - 1 # normalize to [-1, 1]
+                self.rollout_video.update(torch.tensor(normalized_static_traj_img).permute(2, 0, 1).unsqueeze(0).unsqueeze(1).to(self.device))
+
             # check if current step solves a task
             current_task_info = self.task_checker.get_task_info_for_set(start_info, current_info, {subtask})
+
             if len(current_task_info) > 0:
                 success = True
                 break
+
         if self.debug:
             if success:
                 print(colored("success", "green"), end=" ")
             else:
                 print(colored("fail", "red"), end=" ")
+        
         if record:
             self.rollout_video.add_language_instruction(goal["lang_text"])
+
         return success
+    
+    def get_video_tag(self, seq_nr):
+        if dist.is_available() and dist.is_initialized():
+            seq_nr = seq_nr * dist.get_world_size() + dist.get_rank()
+        num_digits = len(str(len(self.eval_sequences)))
+        return f"seq-{seq_nr:0{num_digits}d}"

@@ -239,28 +239,23 @@ class RolloutVideo:
 
             mpy = wandb.util.get_module(
                 "moviepy.editor",
-                required='wandb.Video requires moviepy and imageio when passing raw data.  Install with "pip install moviepy imageio"',
+                required='wandb.Video requires moviepy and imageio when passing raw data. Install with "pip install moviepy imageio"',
             )
             tensor = self._prepare_video(video)
             # Resize tensor if resolution scale is not 1.0
             if self.resolution_scale != 1.0:
                 tensor = self._resize_video(tensor)
-            _, _height, _width, _channels = tensor.shape
             
+            tag = tag.replace("/", "_")
+            video_name = f"global-step-{global_step:05d}_{tag}"
             if save_as_video:
             # encode sequence of images into gif string
                 clip = mpy.ImageSequenceClip(list(tensor), fps=30)
-            else:
-                clip = mpy.ImageSequenceClip(list(tensor), fps=20)
-
-            tag = tag.replace("/", "_")
-            if save_as_video:
-                filename = str(self.save_dir / f"{tag}-{global_step}.mp4")
-            else:
-                filename = self.save_dir / f"{tag}-{global_step}.gif"
-            if save_as_video:
+                filename = self.save_dir / f"{video_name}.mp4"
                 clip.write_videofile(filename, codec='libx264', bitrate="5000k")  # You can adjust the bitrate as needed
             else:
+                clip = mpy.ImageSequenceClip(list(tensor), fps=20)
+                filename = self.save_dir / f"{video_name}.gif"
                 clip.write_gif(filename, logger=None)
     
     def save_frames_to_subfolder(self, n, rollout_index):
