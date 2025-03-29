@@ -24,6 +24,9 @@ class FiLMLayer(nn.Module):
         if self.beta.weight.device != condition.device:
             self.beta = self.beta.to(condition.device)
 
+        if condition.dtype != self.gamma.weight.dtype or condition.dtype != self.beta.weight.dtype:
+            condition = condition.to(self.gamma.weight.dtype)
+
         gamma = self.gamma(condition)
         beta = self.beta(condition)
 

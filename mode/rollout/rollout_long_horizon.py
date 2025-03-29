@@ -316,7 +316,7 @@ class RolloutLongHorizon(Callback):
         # get trajectory points & actions (untransformed bc using render() instead of get_obs())
         untransformed_static_img = self.env.cameras[0].render()[0].squeeze()
         vlm_response = query_vlm(untransformed_static_img, vlm_client, subtask)
-        traj_gripper_points, traj_gripper_actions = extract_gripper_points_and_actions(vlm_response, error_log=log_print)
+        traj_gripper_points, traj_gripper_actions = extract_gripper_points_and_actions(vlm_response, error_logger=log_print)
 
         black_img = np.zeros_like(untransformed_static_img)
         untransformed_black_traj_img = draw_trajectory_onto_image(black_img, traj_gripper_points, traj_gripper_actions)
@@ -325,7 +325,7 @@ class RolloutLongHorizon(Callback):
         # don't transform trajectory image as clip vis encoder has its own transforms
         
         # add trajectory image to goal
-        untransformed_black_traj_img = torch.tensor(untransformed_black_traj_img).permute(2, 0, 1).unsqueeze(0) # (H, W, C) -> (C, H, W)
+        untransformed_black_traj_img = torch.tensor(untransformed_black_traj_img).permute(2, 0, 1).unsqueeze(0) # (H, W, C) -> (1, C, H, W)
         goal["vis_image"] = untransformed_black_traj_img.to(self.device)
 
         model.reset()
