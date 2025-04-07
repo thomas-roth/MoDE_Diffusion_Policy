@@ -115,6 +115,7 @@ class RolloutLongHorizon(Callback):
         empty_cache,
         val_annotations,
         debug,
+        traj_stretch_factor=1.0
     ):
         super().__init__()
         self.env = None  # type: Any
@@ -136,6 +137,7 @@ class RolloutLongHorizon(Callback):
         self.eval_sequences = None
         self.val_annotations = val_annotations
         self.debug = debug
+        self.traj_stretch_factor = traj_stretch_factor
 
         complete_calvin_cfg = hydra.compose(config_name="config_calvin")
         val_transforms_cfg = complete_calvin_cfg.datamodule.transforms.val.rgb_static
@@ -320,7 +322,7 @@ class RolloutLongHorizon(Callback):
         # get trajectory points & actions from initial state of scene & robot (static camera image untransformed as render() used instead of get_obs())
         untransformed_static_img = self.env.cameras[0].render()[0].squeeze()
         vlm_response = query_vlm(untransformed_static_img, vlm_client, subtask)
-        traj_gripper_points, traj_gripper_actions = extract_gripper_points_and_actions(vlm_response, error_logger=log_print)
+        traj_gripper_points, traj_gripper_actions = extract_gripper_points_and_actions(vlm_response, error_logger=log_print, stretch_factor=self.traj_stretch_factor)
 
         model.reset()
         start_info = self.env.get_info()
@@ -336,6 +338,12 @@ class RolloutLongHorizon(Callback):
 
         success = False
         for step in tqdm(range(self.ep_len), total=self.ep_len, desc=f"Rolling out policy for {subtask} (rank={local_rank})", leave=False):
+            if step == self.ep_len / 2:
+                # query vlm again to help robot out of wrong state
+                untransformed_static_img = self.env.cameras[0].render()[0].squeeze()
+                vlm_response = query_vlm(untransformed_static_img, vlm_client, subtask)
+                traj_gripper_points, traj_gripper_actions = extract_gripper_points_and_actions(vlm_response, error_logger=log_print, stretch_factor=self.traj_stretch_factor)
+
             if step % model.multistep == 0:
                 # model predicts multistep actions per step => only draw trajectory once per multistep
                 untransformed_static_img = self.env.cameras[0].render()[0].squeeze()

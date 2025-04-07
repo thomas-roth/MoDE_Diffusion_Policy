@@ -3,6 +3,7 @@ import os
 from pathlib import Path
 import torch
 from safetensors.torch import save_file
+from pytorch_lightning.utilities import rank_zero_only
 
 
 
@@ -49,6 +50,7 @@ def _get_checkpoint_path(model_path: Path) -> str:
     return checkpoints_with_scores[0][1]
 
 
+@rank_zero_only
 def clean_and_save_model(logger):
     logs_path = Path(__file__).absolute().parents[5] / "logs" / "runs"
     model_path = _get_latest_model_path(logs_path)
@@ -72,6 +74,8 @@ def clean_and_save_model(logger):
     
     logger.info("Saving model checkpoint...")
     save_file(cleaned_state_dict, os.path.join(model_path, "model_cleaned.safetensors"))
+
+    os.remove(model_checkpoint_path)
 
 
 if __name__ == "__main__":
