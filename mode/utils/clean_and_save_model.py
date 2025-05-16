@@ -51,20 +51,23 @@ def _get_checkpoint_path(model_path: Path) -> str:
 
 
 @rank_zero_only
-def clean_and_save_model(logger):
-    logs_path = Path(__file__).absolute().parents[5] / "logs" / "runs"
-    model_path = _get_latest_model_path(logs_path)
-
-    if model_path is None:
-        logger.info("No saved model found. Aborting.")
-        return
-
-    logger.info("Loading model checkpoint...")
-    model_checkpoint_path = _get_checkpoint_path(model_path)
-
+def clean_and_save_model(logger, model_checkpoint_path = None):
     if model_checkpoint_path is None:
-        logger.info("No model checkpoint found. Aborting.")
-        return
+        logs_path = Path(__file__).absolute().parents[5] / "logs" / "runs"
+        model_path = _get_latest_model_path(logs_path)
+
+        if model_path is None:
+            logger.info("No saved model found. Aborting.")
+            return
+
+        logger.info("Loading model checkpoint...")
+        model_checkpoint_path = _get_checkpoint_path(model_path)
+
+        if model_checkpoint_path is None:
+            logger.info("No model checkpoint found. Aborting.")
+            return
+    else:
+        model_path = str(Path(model_checkpoint_path).parent)
 
     checkpoint = torch.load(model_checkpoint_path, map_location="cpu")
     
@@ -80,4 +83,4 @@ def clean_and_save_model(logger):
 
 if __name__ == "__main__":
     logger = logging.getLogger(__name__)
-    clean_and_save_model(logger)
+    clean_and_save_model(logger, model_checkpoint_path=None)
