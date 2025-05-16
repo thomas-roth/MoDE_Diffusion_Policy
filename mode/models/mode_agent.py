@@ -581,6 +581,7 @@ class MoDEAgent(pl.LightningModule):
         self.latent_goal = None
         self.rollout_step_counter = 0
     
+
     def forward(self, obs, goal):
         """
         Method for doing inference with the model.
@@ -863,6 +864,8 @@ class MoDEAgent(pl.LightningModule):
         self.static_resnet.to(dtype=self.dtype)
         self.gripper_resnet.to(dtype=self.dtype)
         # self.perceiver.to(dtype=self.dtype)
+        self.language_goal.to(dtype=self.dtype)
+        self.vision_goal.to(dtype=self.dtype)
 @rank_zero_only
 def log_rank_0(*args, **kwargs):
     # when using ddp, only log with rank 0 process

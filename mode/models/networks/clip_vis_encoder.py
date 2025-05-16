@@ -10,7 +10,7 @@ class VisClip(nn.Module):
     def __init__(self, freeze_backbone: bool = True, model_name: str = "ViT-B/16"):
         super(VisClip, self).__init__()
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
-
+        
         self.model_name = f"CLIP_{model_name}"
 
         # Load CLIP model

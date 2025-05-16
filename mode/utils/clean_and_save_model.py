@@ -3,6 +3,7 @@ import os
 from pathlib import Path
 import torch
 from safetensors.torch import save_file
+from pytorch_lightning.utilities import rank_zero_only
 
 
 
@@ -30,7 +31,7 @@ def _get_latest_model_path(logs_path: Path) -> str:
     if len(models_last_run_last_day_path) == 0:
         return None
     latest_model_path = models_last_run_last_day_path[-1]
-    
+
     return latest_model_path
 
 
@@ -49,20 +50,24 @@ def _get_checkpoint_path(model_path: Path) -> str:
     return checkpoints_with_scores[0][1]
 
 
-def clean_and_save_model(logger):
-    logs_path = Path(__file__).absolute().parents[5] / "logs" / "runs"
-    model_path = _get_latest_model_path(logs_path)
-
-    if model_path is None:
-        logger.info("No saved model found. Aborting.")
-        return
-
-    logger.info("Loading model checkpoint...")
-    model_checkpoint_path = _get_checkpoint_path(model_path)
-
+@rank_zero_only
+def clean_and_save_model(logger, model_checkpoint_path = None):
     if model_checkpoint_path is None:
-        logger.info("No model checkpoint found. Aborting.")
-        return
+        logs_path = Path(__file__).absolute().parents[5] / "logs" / "runs"
+        model_path = _get_latest_model_path(logs_path)
+
+        if model_path is None:
+            logger.info("No saved model found. Aborting.")
+            return
+
+        logger.info("Loading model checkpoint...")
+        model_checkpoint_path = _get_checkpoint_path(model_path)
+
+        if model_checkpoint_path is None:
+            logger.info("No model checkpoint found. Aborting.")
+            return
+    else:
+        model_path = str(Path(model_checkpoint_path).parent)
 
     checkpoint = torch.load(model_checkpoint_path, map_location="cpu")
     
@@ -73,7 +78,9 @@ def clean_and_save_model(logger):
     logger.info("Saving model checkpoint...")
     save_file(cleaned_state_dict, os.path.join(model_path, "model_cleaned.safetensors"))
 
+    os.remove(model_checkpoint_path)
+
 
 if __name__ == "__main__":
     logger = logging.getLogger(__name__)
-    clean_and_save_model(logger)
+    clean_and_save_model(logger, model_checkpoint_path=None)
