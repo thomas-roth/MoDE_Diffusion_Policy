@@ -157,10 +157,13 @@ def cleanup_distributed():
 if __name__ == "__main__":
     # Set environment variables
     os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
+    os.environ["CUDA_VISIBLE_DEVICES"] = "0,1,2,3"
     os.environ["TOKENIZERS_PARALLELISM"] = 'True'
     os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'max_split_size_mb:512,expandable_segments:True'
     # Add repo to path
     sys.path.insert(0, str(Path(__file__).absolute().parents[1]))
+    # Add calvin_env to path
+    sys.path.append(str(Path(__file__).absolute().parents[1] / "calvin_env"))
     
     try:
         train()

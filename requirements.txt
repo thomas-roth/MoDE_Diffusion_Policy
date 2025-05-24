@@ -19,7 +19,6 @@ torchsde
 einops
 torchdiffeq
 gym
-moviepy
 tqdm
 termcolor
 wandb
@@ -27,3 +26,5 @@ einops_exts
 flash_attn
 git+https://github.com/openai/CLIP.git
 timm
+seaborn
+moviepy==1.0.3
