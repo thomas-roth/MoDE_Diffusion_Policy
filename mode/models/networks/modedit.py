@@ -147,24 +147,26 @@ class Attention(nn.Module):
 
         if self.flash:
             y = torch.nn.functional.scaled_dot_product_attention(q, k, v, attn_mask=custom_attn_mask, dropout_p=self.attn_dropout.p if self.training else 0, is_causal=self.causal)
+            v_eye = torch.eye(k.size(-2), device=k.device)
+            attn = torch.nn.functional.scaled_dot_product_attention(q, k, v_eye, attn_mask=custom_attn_mask, dropout_p=self.attn_dropout.p if self.training else 0, is_causal=self.causal)
         else:
-            att = (q @ k.transpose(-2, -1)) * (1.0 / math.sqrt(k.size(-1)))
+            attn = (q @ k.transpose(-2, -1)) * (1.0 / math.sqrt(k.size(-1)))
 
             # Optimize custom attention masking
             if custom_attn_mask is not None:
-                att = att.masked_fill(custom_attn_mask == 0, float('-inf'))
+                attn = attn.masked_fill(custom_attn_mask == 0, float('-inf'))
             elif self.causal:
                 # Dynamically compute causal mask based on current sequence length T
                 causal_mask = torch.tril(torch.ones(T, T, device=x.device)).view(1, 1, T, T)
-                att = att.masked_fill(causal_mask == 0, float('-inf'))
+                attn = attn.masked_fill(causal_mask == 0, float('-inf'))
 
-            att = F.softmax(att, dim=-1)
-            att = self.attn_dropout(att)
-            y = att @ v
+            attn = F.softmax(attn, dim=-1)
+            attn = self.attn_dropout(attn)
+            y = attn @ v
 
         y = y.transpose(1, 2).contiguous().view(B, T, C)
         y = self.resid_dropout(self.c_proj(y))
-        return y
+        return y, attn
 
 
 class CondRouterMLP(nn.Module):
@@ -529,13 +531,16 @@ class NoiseBlockMoE(nn.Module):
 
     def forward(self, x, c, context=None, custom_attn_mask=None):
         # First apply attention
-        x = x + self.attn(self.ln_1(x) + c, custom_attn_mask=custom_attn_mask)
+        x_self_attn, self_attn = self.attn(self.ln_1(x) + c, custom_attn_mask=custom_attn_mask)
+        x += x_self_attn
         
         if self.use_cross_attention and context is not None:
             if self.noise_in_cross_attention:
-                x = x + self.cross_att(self.ln_3(x) + c, context, custom_attn_mask=custom_attn_mask)
+                x_cross_attn, cross_attn = self.cross_att(self.ln_3(x) + c, context, custom_attn_mask=custom_attn_mask)
+                x += x_cross_attn
             else:
-                x = x + self.cross_att(self.ln_3(x), context, custom_attn_mask=custom_attn_mask)
+                x_cross_attn, cross_attn = self.cross_att(self.ln_3(x), context, custom_attn_mask=custom_attn_mask)
+                x += x_cross_attn
         x = self.ln_2(x)
 
         # Check if we're in inference mode and have precomputed experts
@@ -592,7 +597,11 @@ class NoiseBlockMoE(nn.Module):
                 ).sum()
             }
         self.total_tokens_processed += batch_tokens
-        return x + next_states
+        
+        if self.use_cross_attention and context is not None:
+            return x + next_states, (self_attn, cross_attn)
+        else:
+            return x + next_states, (self_attn,)
 
     def get_expert_usage(self):
         """Get the combined expert usage statistics"""
@@ -801,24 +810,29 @@ class MoDeDiT(nn.Module):
         if self.use_goal_in_routing:
             cond_token = cond_token + goal_embed
         # Note we need to also adapt the action masks 
-        x = self.forward_modedit(input_seq, cond_token, custom_attn_mask=custom_mask)
+        x, attns_dec = self.forward_modedit(input_seq, cond_token, custom_attn_mask=custom_mask)
         # x = self.ln_f(x)
         # now we want the last half of the output      
         action_outputs =x[:, -self.action_seq_len:, :]
         pred_actions = self.out(action_outputs)
-        return pred_actions
+        return pred_actions, attns_dec
     
     def forward_modedit(self, x, c, custom_attn_mask=None):
         logits_per_layer = []
         probs_per_layer = []
+        attns_dec = []
         for layer in self.blocks:
-            x = layer(x, c, c, custom_attn_mask=custom_attn_mask)
+            x, attns_layer = layer(x, c, c, custom_attn_mask=custom_attn_mask)
+            if len(attns_layer) == 2: # cross attn was used
+                attns_dec.append({"self": attns_layer[0], "cross": attns_layer[1]})
+            else: # no cross attn was used
+                attns_dec.append({"self": attns_layer[0]})
             logits_per_layer.append(layer.logits)
             probs_per_layer.append(layer.probs)
         x = self.ln(x)
         self.logits_per_layer = logits_per_layer
         self.probs_per_layer = probs_per_layer
-        return x
+        return x, attns_dec
 
     def process_sigma_embeddings(self, sigma):
         sigmas = sigma.log() / 4 # log-normalize sigma

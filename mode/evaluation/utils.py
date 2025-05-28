@@ -1,5 +1,7 @@
+from collections import defaultdict
 import contextlib
 import logging
+import os
 from pathlib import Path
 from typing import Union
 import importlib
@@ -11,8 +13,16 @@ from omegaconf import OmegaConf
 import pyhash
 import torch
 from hydra.core.global_hydra import GlobalHydra
+from tqdm import tqdm
+import wandb
 
 from mode.utils.utils import add_text, format_sftp_path
+
+
+ROOT_OUTPUT_PATH = "/home/troth/code/hiwi/MoDE_Diffusion_Policy/outputs"
+DEC_SELF_RESIZE_SHAPE = (250, 250)
+DEC_CROSS_RESIZE_SHAPE = (100, 250) # preserves 4:10 aspect ratio
+
 
 hasher = pyhash.fnv1_32()
 logger = logging.getLogger(__name__)
@@ -372,3 +382,137 @@ def get_env_state_for_initial_condition(initial_condition):
         scene_obs[23] = np.random.uniform(*block_rot_z_range)
 
     return robot_obs, scene_obs
+
+
+def gen_heatmaps(attns_sequences, merge_attn_heads=True, gen_for_dec_self=True, gen_for_dec_cross=False):
+    output_dirs = [os.path.join(ROOT_OUTPUT_PATH, day, time) for day in os.listdir(ROOT_OUTPUT_PATH) for time in os.listdir(Path(ROOT_OUTPUT_PATH) / day)]
+    latest_output_dir = max(output_dirs)
+    heatmap_output_path = f"{latest_output_dir}/attvis"
+
+    input_tokens_enc = ["task", "cams0", "cams1", "cams2"] # 1 token for task instruction, 3 tokens for camera imgs (cannot be separated bc of cross-attn in PerceiverResampler) # not validated
+    input_tokens_dec_self = [f"action{i:02d}" for i in range(14)] # 14 tokens for prediction of next 10 actions
+
+    heatmaps = [defaultdict(list) for _ in range(len(attns_sequences))]
+
+    for sequence_number, attns_sequence in tqdm(enumerate(attns_sequences), total=len(attns_sequences), desc="Generating attn heatmaps for sequences"):
+        for attns_task in tqdm(attns_sequence, leave=False):
+            subtask = attns_task["subtask"].replace(" ", "_")
+
+            for step_number, attns_step in enumerate(attns_task["attns"]):
+                if attns_step is None:
+                    continue # skip if step action already predicted in previous step (multistep prediction)
+
+                for noise_level_inv, attns_noise_level in enumerate(attns_step):
+                    noise_level = len(attns_step) - noise_level_inv - 1
+
+                    attns_noise_level_dec = attns_noise_level # no encoder in architecture
+
+                    if gen_for_dec_self or gen_for_dec_cross:
+                        for layer, attns_dec in enumerate(attns_noise_level_dec):
+                            if gen_for_dec_self and "self" in attns_dec:
+                                self_attns_dec = attns_dec["self"].cpu().detach().numpy() # (B, nh, Td, Td) = (1, 8, 14, 14)
+                                self_attns_dec = normalize_attns(self_attns_dec)
+                            if gen_for_dec_cross and "cross" in attns_dec:
+                                cross_attns_dec = attns_dec["cross"].cpu().detach().numpy() # (B, nh, Td, Te) = (1, 8, 14, 4) # size 4 not validated
+                                cross_attns_dec = normalize_attns(cross_attns_dec)
+
+                            if merge_attn_heads:
+                                if gen_for_dec_self:
+                                    self_attns_dec = self_attns_dec[0].mean(axis=0).astype(np.uint8) # (Td, Td) = (14, 14)
+
+                                    self_attns_dec = cv2.resize(self_attns_dec, DEC_SELF_RESIZE_SHAPE, interpolation=cv2.INTER_NEAREST)
+                                    self_attns_dec = cv2.applyColorMap(self_attns_dec, cv2.COLORMAP_JET) # (H, W, C) = (250, 250, 3)
+                                    self_attns_dec = draw_token_labels_onto_heatmap(self_attns_dec, input_tokens_dec_self, input_tokens_dec_self)
+
+                                    img_name = f"dec_self-attn_noise-level-{noise_level}_layer-{layer}_merged-heads"
+                                    store_heatmap(self_attns_dec, heatmap_output_path, sequence_number, step_number, layer, img_name)
+                                    self_attns_dec = cv2.cvtColor(self_attns_dec, cv2.COLOR_BGR2RGB) # wandb expects RGB images
+                                    heatmaps[sequence_number][subtask].append(wandb.Image(self_attns_dec, caption=img_name))
+                                if gen_for_dec_cross:
+                                    cross_attns_dec = cross_attns_dec[0].mean(axis=0).astype(np.uint8) # (Td, Te) = (14, 4) # size 4 not validated
+
+                                    cross_attns_dec = cv2.resize(cross_attns_dec, DEC_CROSS_RESIZE_SHAPE, interpolation=cv2.INTER_NEAREST)
+                                    cross_attns_dec = cv2.applyColorMap(cross_attns_dec, cv2.COLORMAP_JET)
+                                    cross_attns_dec = draw_token_labels_onto_heatmap(cross_attns_dec, input_tokens_dec_self, input_tokens_enc)
+
+                                    img_name = f"dec_cross-attn_noise-level-{noise_level}_layer-{layer}_merged-heads"
+                                    store_heatmap(cross_attns_dec, heatmap_output_path, sequence_number, step_number, layer, img_name)
+                                    cross_attns_dec = cv2.cvtColor(cross_attns_dec, cv2.COLOR_BGR2RGB) # wandb expects RGB images
+                                    heatmaps[sequence_number][subtask].append(wandb.Image(cross_attns_dec, caption=img_name))
+                            else:
+                                self_attns_dec = self_attns_dec[0].astype(np.uint8) # (nh, Td, Td) = (8, 14, 14)
+                                cross_attns_dec = cross_attns_dec[0].astype(np.uint8) # (nh, Td, Te) = (8, 14, 4) # size 4 not validated
+
+                                for head_number, (self_attns_dec_head, cross_attns_dec_head) in enumerate(zip(self_attns_dec, cross_attns_dec)):
+                                    if gen_for_dec_self:
+                                        self_attns_dec_head = cv2.resize(self_attns_dec_head, DEC_SELF_RESIZE_SHAPE, interpolation=cv2.INTER_NEAREST)
+                                        self_attns_dec_head = cv2.applyColorMap(self_attns_dec_head, cv2.COLORMAP_JET) # (H, W, C) = (250, 250, 3)
+                                        self_attns_dec_head = draw_token_labels_onto_heatmap(self_attns_dec_head, input_tokens_dec_self, input_tokens_dec_self)
+
+                                        img_name = f"dec_self-attn_noise-level-{noise_level}_layer-{layer}_head-{head_number}"
+                                        store_heatmap(self_attns_dec_head, heatmap_output_path, sequence_number, step_number, layer, img_name)
+                                        self_attns_dec_head = cv2.cvtColor(self_attns_dec_head, cv2.COLOR_BGR2RGB) # wandb expects RGB images
+                                        heatmaps[sequence_number][subtask].append(wandb.Image(self_attns_dec_head, caption=img_name))
+                                    if gen_for_dec_cross:
+                                        cross_attns_dec_head = cv2.resize(cross_attns_dec_head, DEC_CROSS_RESIZE_SHAPE, interpolation=cv2.INTER_NEAREST)
+                                        cross_attns_dec_head = cv2.applyColorMap(cross_attns_dec_head, cv2.COLORMAP_JET) # (H, W, C) = (100, 250, 3)
+                                        cross_attns_dec_head = draw_token_labels_onto_heatmap(cross_attns_dec_head, input_tokens_dec_self, input_tokens_enc)
+
+                                        img_name = f"dec_cross-attn_noise-level-{noise_level}_layer-{layer}_head-{head_number}"
+                                        store_heatmap(cross_attns_dec_head, heatmap_output_path, sequence_number, step_number, layer, img_name)
+                                        cross_attns_dec_head = cv2.cvtColor(cross_attns_dec_head, cv2.COLOR_BGR2RGB) # wandb expects RGB images
+                                        heatmaps[sequence_number][subtask].append(wandb.Image(cross_attns_dec_head, caption=img_name))
+
+    for sequence_number, heatmaps_sequence in enumerate(heatmaps):
+        num_zeros_heatmaps = max(len(str(len(heatmaps_sequence[subtask]))) for subtask in heatmaps_sequence.keys())
+        num_zeros_seqs = max(len(str(sequence_number)) for sequence_number in range(len(heatmaps)))
+        for subtask in heatmaps_sequence.keys():
+            print(f"{len(heatmaps[sequence_number][subtask]):{num_zeros_heatmaps}} heatmaps for sequence {sequence_number:0{num_zeros_seqs}} and subtask {subtask}")
+    
+    return heatmaps
+
+
+def normalize_attns(attns):
+    attns = (attns - attns.min()) / (attns.max() - attns.min())
+    attns = 255 * attns
+    return attns
+
+
+def store_heatmap(heatmap, heatmap_output_path, sequence_number, step_number, layer, img_name):
+    os.makedirs(f"{heatmap_output_path}/seq-{sequence_number}/step-{step_number}/layer-{layer}/dec_self", exist_ok=True)
+    cv2.imwrite(f"{heatmap_output_path}/seq-{sequence_number}/step-{step_number}/layer-{layer}/dec_self/{img_name}.png", heatmap)
+
+
+def draw_token_labels_onto_heatmap(heatmap, x_labels, y_labels):
+    font_face = cv2.FONT_HERSHEY_SIMPLEX
+    font_scale = 0.5
+    color = (0, 0, 0)
+    thickness = 1
+    x_cell_height = max(cv2.getTextSize(x_label, font_face, font_scale, thickness)[0][0] for x_label in x_labels) # dynamic depending on longest x label
+    y_cell_width = max(cv2.getTextSize(y_label, font_face, font_scale, thickness)[0][0] for y_label in y_labels) # dynamic depending on longest y label
+    margin_heatmap_labels = 5 # no. of pixels between heatmap and labels
+    
+    heatmap_height, heatmap_width = heatmap.shape[:2]
+
+    heatmap_canvas = np.ones((heatmap_height + x_cell_height + margin_heatmap_labels, heatmap_width + y_cell_width + margin_heatmap_labels, 3), dtype=np.uint8) * 255
+    heatmap_canvas[:heatmap_height, -heatmap_width:] = heatmap # paste heatmap onto top right of canvas
+
+    heatmap_canvas_rotated = cv2.rotate(heatmap_canvas, cv2.ROTATE_90_CLOCKWISE) # x labels are written rotated s.t. they fit onto canvas
+
+    x_cell_width = round(heatmap_width / len(x_labels))
+    x_cell_middle = x_cell_width // 2 + 3
+    for i, label in enumerate(x_labels):
+        x = max(0, x_cell_height - cv2.getTextSize(label, font_face, font_scale, thickness)[0][0]) # right align text w/ overflow protection
+        y = y_cell_width + margin_heatmap_labels + i * x_cell_width + x_cell_middle
+        cv2.putText(heatmap_canvas_rotated, label, (x, y), font_face, font_scale, color, thickness, cv2.LINE_AA)
+
+    heatmap_canvas = cv2.rotate(heatmap_canvas_rotated, cv2.ROTATE_90_COUNTERCLOCKWISE)
+
+    y_cell_height = round(heatmap_height / len(y_labels))
+    y_cell_middle = y_cell_height // 2 + 3
+    for i, label in enumerate(y_labels):
+        x = 0
+        y = i * y_cell_height + y_cell_middle
+        cv2.putText(heatmap_canvas, label, (x, y), font_face, font_scale, color, thickness, cv2.LINE_AA)
+    
+    return heatmap_canvas

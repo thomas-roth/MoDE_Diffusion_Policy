@@ -577,7 +577,7 @@ class DPMSolver(nn.Module):
         return action_3, eps_cache
 
     def dpm_solver_fast(self, state, action, goal,  t_start, t_end, nfe, eta=0., s_noise=1., noise_sampler=None):
-        noise_sampler = default_noise_sampler(x) if noise_sampler is None else noise_sampler
+        noise_sampler = default_noise_sampler(action) if noise_sampler is None else noise_sampler
         if not t_end > t_start and eta:
             raise ValueError('eta must be 0 for reverse sampling')
 
@@ -939,16 +939,18 @@ def sample_ddim(
     sigma_fn = lambda t: t.neg().exp()
     t_fn = lambda sigma: sigma.log().neg()
     old_denoised = None
+    attns_noise_levels = []
 
     for i in trange(len(sigmas) - 1, disable=disable):
         # predict the next action
-        denoised = model(state, action, goal, sigmas[i] * s_in, **extra_args)
+        denoised, attns_dec = model(state, action, goal, sigmas[i] * s_in, **extra_args)
+        attns_noise_levels.append(attns_dec)
         if callback is not None:
             callback({'action': action, 'i': i, 'sigma': sigmas[i], 'sigma_hat': sigmas[i], 'denoised': denoised})
         t, t_next = t_fn(sigmas[i]), t_fn(sigmas[i + 1])
         h = t_next - t
         action = (sigma_fn(t_next) / sigma_fn(t)) * action - (-h).expm1() * denoised
-    return action
+    return action, attns_noise_levels
 
 
 

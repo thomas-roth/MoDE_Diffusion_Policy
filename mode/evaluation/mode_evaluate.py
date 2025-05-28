@@ -19,7 +19,7 @@ import wandb
 import torch.distributed as dist
 
 from mode.evaluation.multistep_sequences import get_sequences
-from mode.evaluation.utils import get_default_mode_and_env, get_env_state_for_initial_condition, join_vis_lang
+from mode.evaluation.utils import get_default_mode_and_env, get_env_state_for_initial_condition, join_vis_lang, gen_heatmaps
 from mode.rollout.rollout_video import RolloutVideo
 
 logger = logging.getLogger(__name__)
@@ -31,19 +31,16 @@ def get_video_tag(i):
     return f"_long_horizon/sequence_{i}"
 
 
-def get_log_dir(log_dir):
-    if log_dir is not None:
-        log_dir = Path(log_dir)
-        os.makedirs(log_dir, exist_ok=True)
-    else:
-        log_dir = Path(__file__).parents[3] / "evaluation"
-        if not log_dir.exists():
-            log_dir = Path("/tmp/evaluation")
+def get_log_dir(log_dir=None):
+    if log_dir is None:
+        log_dir = Path(__file__).parents[2] / "outputs"
+    
+    output_dirs = [os.path.join(log_dir, day, time) for day in os.listdir(log_dir) for time in os.listdir(Path(log_dir) / day)]
+    latest_output_dir = max(output_dirs)
 
-    log_dir = log_dir / "logs" / time.strftime("%Y-%m-%d_%H-%M-%S")
-    os.makedirs(log_dir, exist_ok=False)
-    print(f"logging to {log_dir}")
-    return log_dir
+    print(f"logging to {latest_output_dir}")
+
+    return Path(latest_output_dir)
 
 
 def count_success(results):
@@ -56,7 +53,9 @@ def count_success(results):
     return step_success
 
 
-def print_and_save(total_results, plan_dicts, cfg, log_dir=None):
+def print_and_save(cfg, total_results, plan_dicts, attns_sequences=None, log_dir=None):
+    attns_sequences = attns_sequences[Path(cfg.checkpoint)]
+
     if log_dir is None:
         log_dir = get_log_dir(cfg.train_folder)
 
@@ -107,6 +106,17 @@ def print_and_save(total_results, plan_dicts, cfg, log_dir=None):
         json.dump(json_data, file, indent=2)
     print(f"Best model: epoch {max(ranking, key=ranking.get)} with average sequences length of {max(ranking.values())}")
 
+    if cfg.visualize_attention and attns_sequences is not None:
+        print()
+
+        heatmaps = gen_heatmaps(attns_sequences, cfg.merge_attn_heads)
+        for sequence_number, heatmaps_sequence in tqdm(enumerate(heatmaps), total=len(heatmaps), desc="Uploading heatmaps to wandb"):
+            i = 0
+            num_zeros_prepend = len(str(len(heatmaps_sequence)))
+            for subtask, heatmaps_subtask in heatmaps_sequence.items():
+                wandb.log({f"attention_heatmaps/sequence_{sequence_number}/{i:0{num_zeros_prepend}}_{subtask}": heatmaps_subtask}) # keys ordered in input order as of python 3.7
+                i += 1
+
 
 def evaluate_policy(model, env, lang_embeddings, cfg, num_videos=0, save_dir=None):
     task_oracle = hydra.utils.instantiate(cfg.tasks)
@@ -127,6 +137,7 @@ def evaluate_policy(model, env, lang_embeddings, cfg, num_videos=0, save_dir=Non
     eval_sequences = get_sequences(cfg.num_sequences)
 
     results = []
+    attns_sequences = []
     plans = defaultdict(list)
 
     if not cfg.debug:
@@ -134,10 +145,12 @@ def evaluate_policy(model, env, lang_embeddings, cfg, num_videos=0, save_dir=Non
 
     for i, (initial_state, eval_sequence) in enumerate(eval_sequences):
         record = i < num_videos
-        result = evaluate_sequence(
+        result, attns_sequence = evaluate_sequence(
             env, model, task_oracle, initial_state, eval_sequence, lang_embeddings, val_annotations, cfg, record, rollout_video, i
         )
         results.append(result)
+        attns_sequences.append(attns_sequence)
+
         if record:
             rollout_video.write_to_tmp()
         if not cfg.debug:
@@ -150,7 +163,7 @@ def evaluate_policy(model, env, lang_embeddings, cfg, num_videos=0, save_dir=Non
     if num_videos > 0:
         # log rollout videos
         rollout_video._log_videos_to_file(0, save_as_video=False)
-    return results, plans
+    return results, plans, attns_sequences
 
 
 def evaluate_sequence(
@@ -168,17 +181,24 @@ def evaluate_sequence(
         print()
         print(f"Evaluating sequence: {' -> '.join(eval_sequence)}")
         print("Subtask: ", end="")
+    
+    attns_sequence = []
+
     for subtask in eval_sequence:
         if record:
             rollout_video.new_subtask()
-        success = rollout(env, model, task_checker, cfg, subtask, lang_embeddings, val_annotations, record, rollout_video)
+        success, attns_task = rollout(env, model, task_checker, cfg, subtask, lang_embeddings, val_annotations, record, rollout_video)
+        
+        if cfg.visualize_attention:
+            attns_sequence.append({"subtask": subtask, "attns": attns_task})
+        
         if record:
             rollout_video.draw_outcome(success)
         if success:
             success_counter += 1
         else:
-            return success_counter
-    return success_counter
+            return success_counter, attns_sequence
+    return success_counter, attns_sequence
 
 
 def rollout(env, model, task_oracle, cfg, subtask, lang_embeddings, val_annotations, record=False, rollout_video=None):
@@ -194,9 +214,14 @@ def rollout(env, model, task_oracle, cfg, subtask, lang_embeddings, val_annotati
     goal['lang_text'] = val_annotations[subtask][0]
     model.reset()
     start_info = env.get_info()
+    attns_task = []
 
     for step in range(cfg.ep_len):
-        action = model.step(obs, goal)
+        action, attns_step = model.step(obs, goal)
+
+        if cfg.visualize_attention:
+            attns_task.append(attns_step)
+
         obs, _, _, current_info = env.step(action)
         if cfg.debug:
             img = env.render(mode="rgb_array")
@@ -212,12 +237,12 @@ def rollout(env, model, task_oracle, cfg, subtask, lang_embeddings, val_annotati
                 print(colored("success", "green"), end=" ")
             if record:
                 rollout_video.add_language_instruction(lang_annotation)
-            return True
+            return True, attns_task
     if cfg.debug:
         print(colored("fail", "red"), end=" ")
     if record:
         rollout_video.add_language_instruction(lang_annotation)
-    return False
+    return False, attns_task
 
 
 @hydra.main(config_path="../../conf", config_name="mode_evaluate")
@@ -231,6 +256,7 @@ def main(cfg):
     env = None
     results = {}
     plans = {}
+    attns_sequences = {}
 
     print(cfg.device)
     model, env, _, lang_embeddings = get_default_mode_and_env(
@@ -272,8 +298,12 @@ def main(cfg):
             # dir=log_dir / "wandb",
         )
 
-    results[Path(cfg.checkpoint)], plans[Path(cfg.checkpoint)] = evaluate_policy(model, env, lang_embeddings, cfg, num_videos=cfg.num_videos, save_dir=Path(log_dir))
-    print_and_save(results, plans, cfg, log_dir=log_dir)
+    results[Path(cfg.checkpoint)], plans[Path(cfg.checkpoint)], attns_sequences[Path(cfg.checkpoint)] = evaluate_policy(model, env, lang_embeddings, cfg, num_videos=cfg.num_videos, save_dir=Path(log_dir))
+    
+    if cfg.visualize_attention:
+        print_and_save(cfg, results, plans, attns_sequences, log_dir=log_dir)
+    else:
+        print_and_save(cfg, results, plans, log_dir=log_dir)
     
     if log_wandb:
         run.finish()

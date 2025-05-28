@@ -77,7 +77,8 @@ class GCDenoiser(nn.Module):
             The output of the forward pass.
         """
         c_skip, c_out, c_in = [append_dims(x, action.ndim) for x in self.get_scalings(sigma)]
-        return self.inner_model(state, action * c_in, goal, sigma, **kwargs) * c_out + action * c_skip
+        result, attns_dec = self.inner_model(state, action * c_in, goal, sigma, **kwargs)
+        return result * c_out + action * c_skip, attns_dec
     
     def forward_context_only(self, state, action, goal, sigma, **kwargs):
         """
