@@ -532,15 +532,15 @@ class NoiseBlockMoE(nn.Module):
     def forward(self, x, c, context=None, custom_attn_mask=None):
         # First apply attention
         x_self_attn, self_attn = self.attn(self.ln_1(x) + c, custom_attn_mask=custom_attn_mask)
-        x += x_self_attn
+        x = x + x_self_attn
         
         if self.use_cross_attention and context is not None:
             if self.noise_in_cross_attention:
                 x_cross_attn, cross_attn = self.cross_att(self.ln_3(x) + c, context, custom_attn_mask=custom_attn_mask)
-                x += x_cross_attn
+                x = x + x_cross_attn
             else:
                 x_cross_attn, cross_attn = self.cross_att(self.ln_3(x), context, custom_attn_mask=custom_attn_mask)
-                x += x_cross_attn
+                x = x + x_cross_attn
         x = self.ln_2(x)
 
         # Check if we're in inference mode and have precomputed experts
