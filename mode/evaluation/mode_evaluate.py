@@ -112,9 +112,11 @@ def print_and_save(cfg, total_results, plan_dicts, attns_sequences=None, log_dir
         heatmaps = gen_heatmaps(attns_sequences, cfg.merge_attn_heads)
         for sequence_number, heatmaps_sequence in tqdm(enumerate(heatmaps), total=len(heatmaps), desc="Uploading heatmaps to wandb"):
             i = 0
-            num_zeros_prepend = len(str(len(heatmaps_sequence)))
+            num_zeros_subtask = len(str(len(heatmaps_sequence)))
             for subtask, heatmaps_subtask in heatmaps_sequence.items():
-                wandb.log({f"attention_heatmaps/sequence_{sequence_number}/{i:0{num_zeros_prepend}}_{subtask}": heatmaps_subtask}) # keys ordered in input order as of python 3.7
+                num_zeros_step = len(str(max(heatmaps_subtask.keys())))
+                for step_number, heatmaps_step in tqdm(heatmaps_subtask.items(), leave=False):
+                    wandb.log({f"attention_heatmaps/sequence_{sequence_number}/{i:0{num_zeros_subtask}}_{subtask}/step_{step_number:0{num_zeros_step}}": heatmaps_step}) # keys ordered in input order as of python 3.7
                 i += 1
 
 

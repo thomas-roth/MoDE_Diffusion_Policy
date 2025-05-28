@@ -445,7 +445,7 @@ class MoDEAgent(pl.LightningModule):
         dataset_batch = batch
         perceptual_emb, latent_goal = self.compute_input_embeddings(dataset_batch)
         
-        action_pred = self.denoise_actions(
+        action_pred, _ = self.denoise_actions(
             torch.zeros_like(latent_goal).to(self.device),
             perceptual_emb,
             latent_goal,
