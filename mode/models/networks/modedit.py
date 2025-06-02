@@ -116,7 +116,7 @@ class Attention(nn.Module):
         self.causal = causal
         
         self.flash = hasattr(torch.nn.functional, 'scaled_dot_product_attention')
-        if not self.flash and causal:
+        if not self.flash and self.causal:
             print("WARNING: Using slow attention. Flash Attention requires PyTorch >= 2.0")
         # Dynamically compute causal mask instead of using a fixed bias buffer
         self.block_size = block_size
@@ -443,6 +443,7 @@ class NoiseBlockMoE(nn.Module):
             use_argmax: bool = False,
             use_shared_expert: bool = False,
             identity_expert: bool = False,
+            causal: bool = True,
             attn_arg: str = 'causal',
         ):
         super().__init__()
@@ -455,7 +456,7 @@ class NoiseBlockMoE(nn.Module):
             attn_pdrop=attn_pdrop,
             resid_pdrop=0,
             block_size=100,
-            causal=True,
+            causal=causal,
         )
         self.use_cross_attention = use_cross_attention
         if self.use_cross_attention:
@@ -465,7 +466,7 @@ class NoiseBlockMoE(nn.Module):
                 qk_norm=True,
                 attn_pdrop=attn_pdrop,
                 resid_pdrop=0,
-                causal=True,
+                causal=causal,
             )
             self.ln_3 = RMSNorm(n_embd, eps=1e-6) 
 
@@ -548,7 +549,10 @@ class NoiseBlockMoE(nn.Module):
             noise_key = c.mean().item()  # or however you want to get the noise key
             if noise_key in self.fused_experts:
                 fused_mlp = self.fused_experts[noise_key]
-                return x + fused_mlp(x)
+
+                if self.use_cross_attention and context is not None:
+                    return x + fused_mlp(x), (self_attn, cross_attn)
+                return x + fused_mlp(x), (self_attn,)
             
         batch_tokens = x.size(0) * x.size(1)
         # Normal forward pass (for training or when cache is empty)
@@ -723,6 +727,7 @@ class MoDeDiT(nn.Module):
                     router_normalize=router_normalize,
                     use_shared_expert=use_shared_expert,
                     use_argmax=use_argmax,
+                    causal=causal,
                     attn_arg=attn_arg,
                 )
             )

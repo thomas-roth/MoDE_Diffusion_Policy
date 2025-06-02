@@ -35,3 +35,4 @@ ep_len: 360
 
 visualize_attention: True
 merge_attn_heads: True
+num_attn_heatmaps: -1 # -1 for all heatmaps

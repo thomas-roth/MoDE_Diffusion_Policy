@@ -19,7 +19,7 @@ import wandb
 from mode.utils.utils import add_text, format_sftp_path
 
 
-ROOT_OUTPUT_PATH = "/home/troth/code/hiwi/MoDE_Diffusion_Policy/outputs"
+DEFAULT_ROOT_OUTPUT_PATH = "/home/troth/code/hiwi/MoDE_Diffusion_Policy/outputs"
 DEC_SELF_RESIZE_SHAPE = (250, 250)
 DEC_CROSS_RESIZE_SHAPE = (100, 250) # preserves 4:10 aspect ratio
 
@@ -384,11 +384,7 @@ def get_env_state_for_initial_condition(initial_condition):
     return robot_obs, scene_obs
 
 
-def gen_heatmaps(attns_sequences, merge_attn_heads=True):
-    output_dirs = [os.path.join(ROOT_OUTPUT_PATH, day, time) for day in os.listdir(ROOT_OUTPUT_PATH) for time in os.listdir(Path(ROOT_OUTPUT_PATH) / day)]
-    latest_output_dir = max(output_dirs)
-    heatmap_output_path = f"{latest_output_dir}/attvis"
-
+def gen_heatmaps(attns_sequences, output_dir, merge_attn_heads=True, num_heatmaps=-1): # -1 means all heatmaps
     input_tokens_dec_self = ["sigma", "task", "static-cam", "gripper-cam"] + [f"action{i}" for i in range(10)] # 14 tokens for prediction of next 10 actions
 
     heatmaps = [defaultdict(lambda: defaultdict(list)) for _ in range(len(attns_sequences))]
@@ -407,9 +403,11 @@ def gen_heatmaps(attns_sequences, merge_attn_heads=True):
                     attns_noise_level_dec = attns_noise_level # no encoder in architecture
 
                     for layer, attns_dec in enumerate(attns_noise_level_dec):
-                        if "self" in attns_dec:
-                            self_attns_dec = attns_dec["self"].cpu().detach().numpy() # (B, nh, Td, Td) = (1, 8, 14, 14)
-                            self_attns_dec = normalize_attns(self_attns_dec)
+                        if "self" not in attns_dec:
+                            continue
+
+                        self_attns_dec = attns_dec["self"].cpu().detach().numpy() # (B, nh, Td, Td) = (1, 8, 14, 14)
+                        self_attns_dec = normalize_attns(self_attns_dec)
 
                         if merge_attn_heads:
                             self_attns_dec = self_attns_dec[0].mean(axis=0).astype(np.uint8) # (Td, Td) = (14, 14)
@@ -418,27 +416,34 @@ def gen_heatmaps(attns_sequences, merge_attn_heads=True):
                             self_attns_dec = cv2.applyColorMap(self_attns_dec, cv2.COLORMAP_JET) # (H, W, C) = (250, 250, 3)
                             self_attns_dec = draw_token_labels_onto_heatmap(self_attns_dec, input_tokens_dec_self, input_tokens_dec_self)
 
-                            img_name = f"dec_self-attn_noise-level-{noise_level}_layer-{layer}_merged-heads"
-                            store_heatmap(self_attns_dec, heatmap_output_path, sequence_number, step_number, layer, img_name)
-                            self_attns_dec = cv2.cvtColor(self_attns_dec, cv2.COLOR_BGR2RGB) # wandb expects RGB images
-                            heatmaps[sequence_number][subtask][step_number].append(wandb.Image(self_attns_dec, caption=img_name))
+                            if num_heatmaps != 0:
+                                img_name = f"dec_self-attn_noise-level-{noise_level}_layer-{layer}_merged-heads"
+                                store_heatmap(self_attns_dec, output_dir, sequence_number, step_number, layer, img_name)
+                                self_attns_dec = cv2.cvtColor(self_attns_dec, cv2.COLOR_BGR2RGB) # wandb expects RGB images
+                                heatmaps[sequence_number][subtask][step_number].append(wandb.Image(self_attns_dec, caption=img_name))
+                                num_heatmaps -= 1
                         else:
                             self_attns_dec = self_attns_dec[0].astype(np.uint8) # (nh, Td, Td) = (8, 14, 14)
-                            cross_attns_dec = cross_attns_dec[0].astype(np.uint8) # (nh, Td, Te) = (8, 14, 4) # size 4 not validated
 
-                            for head_number, (self_attns_dec_head, cross_attns_dec_head) in enumerate(zip(self_attns_dec, cross_attns_dec)):
+                            for head_number, self_attns_dec_head in enumerate(self_attns_dec):
                                 self_attns_dec_head = cv2.resize(self_attns_dec_head, DEC_SELF_RESIZE_SHAPE, interpolation=cv2.INTER_NEAREST)
                                 self_attns_dec_head = cv2.applyColorMap(self_attns_dec_head, cv2.COLORMAP_JET) # (H, W, C) = (250, 250, 3)
                                 self_attns_dec_head = draw_token_labels_onto_heatmap(self_attns_dec_head, input_tokens_dec_self, input_tokens_dec_self)
 
-                                img_name = f"dec_self-attn_noise-level-{noise_level}_layer-{layer}_head-{head_number}"
-                                store_heatmap(self_attns_dec_head, heatmap_output_path, sequence_number, step_number, layer, img_name)
-                                self_attns_dec_head = cv2.cvtColor(self_attns_dec_head, cv2.COLOR_BGR2RGB) # wandb expects RGB images
-                                heatmaps[sequence_number][subtask][step_number].append(wandb.Image(self_attns_dec_head, caption=img_name))
+                                if num_heatmaps != 0:
+                                    img_name = f"dec_self-attn_noise-level-{noise_level}_layer-{layer}_head-{head_number}"
+                                    store_heatmap(self_attns_dec_head, output_dir, sequence_number, step_number, layer, img_name)
+                                    self_attns_dec_head = cv2.cvtColor(self_attns_dec_head, cv2.COLOR_BGR2RGB) # wandb expects RGB images
+                                    heatmaps[sequence_number][subtask][step_number].append(wandb.Image(self_attns_dec_head, caption=img_name))
+                                    num_heatmaps -= 1
 
     for sequence_number, heatmaps_sequence in enumerate(heatmaps):
-        num_zeros_heatmaps = max(len(str(len(heatmaps_sequence[subtask]))) for subtask in heatmaps_sequence.keys())
+        num_zeros_heatmaps = 0 # short variant like for num_zeros_seqs doesnt work if num_attvis_heatmaps != -1 bc some subtasks might not have any heatmaps
+        for subtask in heatmaps_sequence.keys():
+            if len(heatmaps_sequence[subtask]) > 0:
+                num_zeros_heatmaps = max(num_zeros_heatmaps, len(str(len(heatmaps_sequence[subtask]))))
         num_zeros_seqs = max(len(str(sequence_number)) for sequence_number in range(len(heatmaps)))
+
         for subtask in heatmaps_sequence.keys():
             print(f"{len(heatmaps[sequence_number][subtask]):{num_zeros_heatmaps}} heatmaps for sequence {sequence_number:0{num_zeros_seqs}} and subtask {subtask}")
     

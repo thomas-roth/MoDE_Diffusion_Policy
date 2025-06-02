@@ -24,6 +24,8 @@ from mode.rollout.rollout_video import RolloutVideo
 
 logger = logging.getLogger(__name__)
 
+ROOT_OUTPUT_PATH = Path(__file__).parents[2] / "outputs"
+
 
 def get_video_tag(i):
     if dist.is_available() and dist.is_initialized():
@@ -109,7 +111,11 @@ def print_and_save(cfg, total_results, plan_dicts, attns_sequences=None, log_dir
     if cfg.visualize_attention and attns_sequences is not None:
         print()
 
-        heatmaps = gen_heatmaps(attns_sequences, cfg.merge_attn_heads)
+        output_dirs = [os.path.join(ROOT_OUTPUT_PATH, day, time) for day in os.listdir(ROOT_OUTPUT_PATH) for time in os.listdir(Path(ROOT_OUTPUT_PATH) / day)]
+        latest_output_dir = max(output_dirs)
+        attvis_output_dir = f"{latest_output_dir}/attvis"
+
+        heatmaps = gen_heatmaps(attns_sequences, output_dir=attvis_output_dir, merge_attn_heads=cfg.merge_attn_heads, num_heatmaps=cfg.num_attn_heatmaps)
         for sequence_number, heatmaps_sequence in tqdm(enumerate(heatmaps), total=len(heatmaps), desc="Uploading heatmaps to wandb"):
             i = 0
             num_zeros_subtask = len(str(len(heatmaps_sequence)))

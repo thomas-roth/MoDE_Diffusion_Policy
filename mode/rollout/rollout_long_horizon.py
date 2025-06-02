@@ -304,7 +304,7 @@ class RolloutLongHorizon(Callback):
         start_info = self.env.get_info()
         success = False
         for step in range(self.ep_len):
-            action = model.step(obs, goal)
+            action, _ = model.step(obs, goal)
             # print(action.shape)
             obs, _, _, current_info = self.env.step(action)
             if self.debug and os.environ.get("DISPLAY") is not None:

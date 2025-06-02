@@ -16,6 +16,7 @@ from pytorch_lightning.utilities import rank_zero_only
 sys.path.insert(0, Path(__file__).absolute().parents[1].as_posix())
 import mode.models.mode_agent as models_m
 from mode.utils.utils import get_git_commit_hash, get_last_checkpoint, initialize_pretrained_weights, print_system_env_info
+from mode.utils.clean_and_save_model import clean_and_save_model
 
 # Add local repo to path
 sys.path.insert(0, str(Path(__file__).absolute().parents[1]))
@@ -146,6 +147,7 @@ def train(cfg: DictConfig) -> None:
         clear_cuda_cache()
         # Clean up
         cleanup_distributed()
+        clean_and_save_model(logger)
         if wandb.run is not None:
             wandb.finish()
 
