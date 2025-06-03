@@ -116,7 +116,7 @@ class Attention(nn.Module):
         self.causal = causal
         
         self.flash = hasattr(torch.nn.functional, 'scaled_dot_product_attention')
-        if not self.flash and self.causal:
+        if not self.flash:
             print("WARNING: Using slow attention. Flash Attention requires PyTorch >= 2.0")
         # Dynamically compute causal mask instead of using a fixed bias buffer
         self.block_size = block_size
@@ -147,8 +147,9 @@ class Attention(nn.Module):
 
         if self.flash:
             y = torch.nn.functional.scaled_dot_product_attention(q, k, v, attn_mask=custom_attn_mask, dropout_p=self.attn_dropout.p if self.training else 0, is_causal=self.causal)
-            v_eye = torch.eye(k.size(-2), device=k.device)
+            v_eye = torch.eye(v.size(-2), device=v.device)
             attn = torch.nn.functional.scaled_dot_product_attention(q, k, v_eye, attn_mask=custom_attn_mask, dropout_p=self.attn_dropout.p if self.training else 0, is_causal=self.causal)
+            assert torch.allclose(attn @ v, y, atol=1e-6), "Flash attention output does not match manual attention computation"
         else:
             attn = (q @ k.transpose(-2, -1)) * (1.0 / math.sqrt(k.size(-1)))
 

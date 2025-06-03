@@ -56,7 +56,8 @@ def count_success(results):
 
 
 def print_and_save(cfg, total_results, plan_dicts, attns_sequences=None, log_dir=None):
-    attns_sequences = attns_sequences[Path(cfg.checkpoint)]
+    if attns_sequences is not None:
+        attns_sequences = attns_sequences[Path(cfg.checkpoint)]
 
     if log_dir is None:
         log_dir = get_log_dir(cfg.train_folder)
@@ -145,8 +146,8 @@ def evaluate_policy(model, env, lang_embeddings, cfg, num_videos=0, save_dir=Non
     eval_sequences = get_sequences(cfg.num_sequences)
 
     results = []
-    attns_sequences = []
     plans = defaultdict(list)
+    attns_sequences = []
 
     if not cfg.debug:
         eval_sequences = tqdm(eval_sequences, position=0, leave=True)

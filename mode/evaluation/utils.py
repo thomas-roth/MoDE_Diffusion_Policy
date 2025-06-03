@@ -21,7 +21,6 @@ from mode.utils.utils import add_text, format_sftp_path
 
 DEFAULT_ROOT_OUTPUT_PATH = "/home/troth/code/hiwi/MoDE_Diffusion_Policy/outputs"
 DEC_SELF_RESIZE_SHAPE = (250, 250)
-DEC_CROSS_RESIZE_SHAPE = (100, 250) # preserves 4:10 aspect ratio
 
 
 hasher = pyhash.fnv1_32()
