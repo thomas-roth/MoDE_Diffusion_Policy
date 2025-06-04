@@ -146,10 +146,9 @@ class Attention(nn.Module):
         k = self.k_norm(k)
 
         if self.flash:
-            y = torch.nn.functional.scaled_dot_product_attention(q, k, v, attn_mask=custom_attn_mask, dropout_p=self.attn_dropout.p if self.training else 0, is_causal=self.causal)
-            v_eye = torch.eye(v.size(-2), device=v.device)
+            v_eye = torch.eye(v.size(-2), device=v.device).expand(v.size(0), v.size(1), -1 , -1)
             attn = torch.nn.functional.scaled_dot_product_attention(q, k, v_eye, attn_mask=custom_attn_mask, dropout_p=self.attn_dropout.p if self.training else 0, is_causal=self.causal)
-            assert torch.allclose(attn @ v, y, atol=1e-6), "Flash attention output does not match manual attention computation"
+            y = attn @ v
         else:
             attn = (q @ k.transpose(-2, -1)) * (1.0 / math.sqrt(k.size(-1)))
 
